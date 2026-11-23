@@ -8439,31 +8439,33 @@ Zungri|VV|`;
         }
 
         // Ricerca per nome o CAP. Ritorna al massimo 'limit' risultati ordinati per pertinenza e popolazione.
-        function searchPlaces(rawValue, limit = 25) {
+        function searchPlaces(rawValue, limit = 50) {
             const q = normalizePlace(String(rawValue || '').replace(/\([^)]*\)/g, ' '));
             const source = comuniState.status === 'ready' ? comuniState.list : BUILTIN_PLACES;
-            if (!q) return BUILTIN_PLACES.slice(0, 10).map((p) => ({ place: p, cap: p.mainCap, score: 0 }));
+            const byName = (a, b) => a.place.shortName.localeCompare(b.place.shortName, 'it', { sensitivity: 'base' }) || (a.place.sigla || '').localeCompare(b.place.sigla || '');
+            if (!q) {
+                return BUILTIN_PLACES.map((p) => ({ place: p, cap: p.mainCap, score: 0 })).sort(byName).slice(0, 10);
+            }
 
             const found = [];
             if (/^\d+$/.test(q)) {
-                // ricerca per CAP (anche parziale, es. "751")
+                // ricerca per CAP (anche parziale, es. "751"), in ordine di CAP
                 for (const p of source) {
                     const cap = p.caps.find((c) => c.startsWith(q));
-                    if (cap) found.push({ place: p, cap: p.mainCap.startsWith(q) ? p.mainCap : cap, score: cap === q ? 0 : 1 });
+                    if (cap) found.push({ place: p, cap: p.mainCap.startsWith(q) ? p.mainCap : cap, score: 0 });
                 }
+                found.sort((a, b) => a.cap.localeCompare(b.cap) || byName(a, b));
             } else {
+                // prima i comuni che iniziano con il testo digitato, poi quelli in cui inizia un'altra parola
+                // del nome (es. "emilia" -> "Reggio Emilia"), ciascun gruppo in ordine alfabetico
                 for (const p of source) {
                     let score = -1;
                     if (p.norm.startsWith(q)) score = 0;
                     else if (p.norm.includes(' ' + q)) score = 1;
-                    else if (q.length >= 3 && p.norm.includes(q)) score = 2;
                     if (score >= 0) found.push({ place: p, cap: p.mainCap, score });
                 }
+                found.sort((a, b) => a.score - b.score || byName(a, b));
             }
-            found.sort((a, b) =>
-                a.score - b.score ||
-                b.place.population - a.place.population ||
-                a.place.shortName.localeCompare(b.place.shortName, 'it'));
             return found.slice(0, limit);
         }
 
