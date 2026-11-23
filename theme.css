@@ -72,7 +72,6 @@ html.dark .text-amber-600 { color: #fbbf24; }
 
 /* ---------- Varie ---------- */
 html.dark .shadow-xl, html.dark .shadow-2xl, html.dark .shadow-sm, html.dark .shadow-md { --tw-shadow-color: rgba(0, 0, 0, .45); }
-html.dark header img[src$="logo.png"] { filter: brightness(1.2); }
 html.dark select option { background: #111b2f; color: #e2e8f0; }
 html.dark input:-webkit-autofill {
     -webkit-box-shadow: 0 0 0 1000px #0b1220 inset;
