@@ -1,4 +1,4 @@
-/* Pronto Click Dottore - Gestione consenso cookie
+/* Click Dottore - Gestione consenso cookie
  * Inclusione: <script src="cookie-consent.js"></script> (nel <head>, prima degli altri script)
  * Riapertura preferenze: window.PCDCookies.open()  oppure link con data-cookie-settings
  * Script di terze parti da bloccare fino al consenso:

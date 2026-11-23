@@ -1,5 +1,5 @@
 /*
- * Pronto Click Dottore - Tema chiaro / scuro
+ * Click Dottore - Tema chiaro / scuro
  *
  * Il tema segue SOLO le impostazioni del dispositivo di chi visita il sito
  * (prefers-color-scheme: macOS, Windows, iOS, Android, ecc.):
