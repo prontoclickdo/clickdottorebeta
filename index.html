@@ -83,7 +83,7 @@
             <nav class="hidden xl:flex items-center gap-4 2xl:gap-6 shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">
                 <a href="#" class="hover:text-skybrand-600 transition">Trattamento dei dati</a>
                 <a href="#" class="hover:text-skybrand-600 transition">Chiedi al Dottore</a>
-
+                <a href="accedi.html" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 hover:border-skybrand-400 hover:text-skybrand-600 transition"><i class="fa-solid fa-lock text-xs"></i> Area riservata</a>
             </nav>
 
             <!-- MENU MOBILE -->
@@ -100,6 +100,7 @@
                 <div class="flex flex-col gap-1 text-sm font-medium text-slate-700">
                     <a href="#" class="py-2 hover:text-skybrand-600 transition">Trattamento dei dati</a>
                     <a href="#" class="py-2 hover:text-skybrand-600 transition">Chiedi al Dottore</a>
+                    <a href="accedi.html" class="py-2 hover:text-skybrand-600 transition"><i class="fa-solid fa-lock text-xs mr-1.5"></i>Area riservata</a>
                 </div>
             </div>
         </div>
@@ -224,7 +225,7 @@
                         <i class="fa-solid fa-user-doctor text-skybrand-500"></i>
                         <span id="results-title">Risultati di ricerca</span>
                     </h1>
-                    <p class="text-xs text-slate-500 mt-0.5">Il servizio di prenotazione online è in arrivo</p>
+                    <p class="text-xs text-slate-500 mt-0.5">Scegli il medico e prenota online pagando la quota di prenotazione</p>
                 </div>
             </div>
 
@@ -232,18 +233,7 @@
                 Hai cercato: <strong id="active-search-text" class="text-skybrand-600">--</strong>
             </div>
 
-            <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-2xl mx-auto shadow-sm my-12">
-                <div class="w-16 h-16 bg-skybrand-50 text-skybrand-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
-                    <i class="fa-solid fa-calendar-check"></i>
-                </div>
-                <h3 class="text-xl font-bold text-slate-900 mb-2">Prenotazioni online presto disponibili</h3>
-                <p class="text-slate-500 text-sm mb-6 leading-relaxed">
-                    Stiamo preparando il servizio di ricerca e prenotazione dei medici. Torna a trovarci presto!
-                </p>
-                <button type="button" onclick="showHomeView()" class="px-5 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white font-medium text-sm rounded-xl transition shadow-md shadow-skybrand-500/20">
-                    Torna alla Home
-                </button>
-            </div>
+            <div id="elenco-medici" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
         </div>
     </main>
 
@@ -8671,6 +8661,7 @@ Zungri|VV|`;
                 if (activeSearchText) activeSearchText.textContent = summaryText;
                 if (summary) summary.textContent = `Ricerca: ${summaryText}`;
                 showResultsView();
+                if (window.cercaMedici) window.cercaMedici(specialty, location);
             });
         }
 
@@ -8716,5 +8707,6 @@ Zungri|VV|`;
             setInterval(next, 5000);
         })();
     </script>
+    <script type="module" src="ricerca.js"></script>
 </body>
 </html>
