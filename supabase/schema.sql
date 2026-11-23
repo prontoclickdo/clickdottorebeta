@@ -275,3 +275,14 @@ create view public.prestazioni_pubbliche as
    where p.attivo and m.attivo;
 
 grant select on public.medici_pubblici, public.prestazioni_pubbliche to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- Permessi sulle tabelle (il progetto non li assegna in automatico).
+-- Le righe visibili restano limitate dalle regole RLS definite sopra.
+-- ---------------------------------------------------------------------
+grant usage on schema public to anon, authenticated, service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+grant select on public.impostazioni to anon, authenticated;
+grant select on public.hub, public.medici, public.prestazioni, public.profili,
+                public.prenotazioni, public.registro to authenticated;

@@ -292,6 +292,7 @@ function consensi(body: Record<string, unknown>) {
 // Percorsi
 // ---------------------------------------------------------------------
 async function prenotaOnline(req: Request) {
+  if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(503, "I pagamenti online non sono ancora attivi, riprova più tardi");
   const body = await req.json().catch(() => ({}));
   if (body.sito) throw new HttpError(400, "Richiesta non valida");   // campo trappola anti-bot
   const medico_id = uuid(body.medico_id, "medico");
