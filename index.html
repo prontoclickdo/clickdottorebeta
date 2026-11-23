@@ -294,16 +294,6 @@
             if (icon) icon.className = open ? 'fa-solid fa-xmark text-lg' : 'fa-solid fa-bars text-lg';
         }
 
-        const ICON_MAP = {
-            'Ginecologia e Ostetricia': '🤰', 'Cardiologia': '🫀', 'Odontoiatria e Dentisteria': '🦷', 'Oculistica (Oftalmologia)': '👁️',
-            'Dermatologia e Venereologia': '🩺', 'Ortopedia e Traumatologia': '🦴', 'Psicologia': '🧠', 'Psicoterapia': '🧠',
-            'Psichiatra': '🧠', 'Nutrizione Clinica': '🥗', 'Biologia Nutrizionale': '🥗', 'Dietistica e Dietologia': '🥗',
-            'Pediatra': '👶', 'Pediatria': '👶', 'Psichiatria': '🧠', 'Neurologia': '🧠', 'Otorinolaringoiatria': '👂',
-            'Fisioterapia': '🏃', 'Osteopatia': '🦴', 'Urologia': '🩺', 'Andrologia': '🩺',
-            'Radiologia e Radiodiagnostica': '🩻', 'Oncologia': '🎗', 'Allergologia e Immunologia': '🤧',
-            'Blefaroplastica': '👁️', 'Colposcopia': '🔬', 'Mindfulness': '🧠',
-            'Ecografia addome completo': '📡', 'Dieta chetogenica': '🥗', 'Faccette dentali': '🦷'
-        };
 
         const RAW_SPECIALTIES = [
             "Allergologia e Immunologia", "Algologia (Terapia del Dolore)", "Anatomia Patologica", "Andrologia",
@@ -328,7 +318,7 @@
             "Tricologia", "Urologia"
         ];
 
-        const SPECIALTIES = RAW_SPECIALTIES.map((name) => ({ name, icon: ICON_MAP[name] || '🩺' }));
+        const SPECIALTIES = RAW_SPECIALTIES.map((name) => ({ name }));
 
         // ELENCO COMPLETO DEI CAPOLUOGHI E CITTÀ D'ITALIA CON RELATIVI CAP (121 CAPOLUOGHI)
         const CITIES_WITH_CAP = [
@@ -8512,14 +8502,10 @@ Zungri|VV|`;
                 row.className = 'px-4 py-2 hover:bg-skybrand-50 text-sm text-slate-700 cursor-pointer flex items-center gap-2.5';
                 row.addEventListener('click', () => selectAutocomplete('specialty-input', specialty.name, 'specialty-autocomplete'));
 
-                const icon = document.createElement('span');
-                icon.className = 'text-base';
-                icon.textContent = specialty.icon;
-
                 const label = document.createElement('span');
                 label.textContent = specialty.name;
 
-                row.append(icon, label);
+                row.append(label);
                 container.appendChild(row);
             });
             container.classList.remove('hidden');
