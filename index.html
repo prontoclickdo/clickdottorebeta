@@ -8507,15 +8507,11 @@ Zungri|VV|`;
                 button.className = 'aspect-square flex flex-col items-center justify-center p-4 rounded-2xl bg-slate-50 hover:bg-skybrand-50 hover:border-skybrand-300 border border-slate-200 transition-all duration-200 shadow-sm hover:shadow-md group text-center';
                 button.addEventListener('click', () => fillSpecialty(specialty.name));
 
-                const icon = document.createElement('span');
-                icon.className = 'text-3xl sm:text-4xl mb-3 transform group-hover:scale-110 transition-transform duration-200';
-                icon.textContent = specialty.icon;
-
                 const label = document.createElement('span');
-                label.className = 'text-xs sm:text-sm font-semibold text-slate-700 group-hover:text-skybrand-700 leading-tight line-clamp-2';
+                label.className = 'text-xs sm:text-sm font-semibold text-slate-700 group-hover:text-skybrand-700 leading-tight line-clamp-3';
                 label.textContent = specialty.name;
 
-                button.append(icon, label);
+                button.append(label);
                 container.appendChild(button);
             });
         }
