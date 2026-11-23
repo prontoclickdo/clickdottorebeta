@@ -161,12 +161,6 @@
                         <div id="specialties-quick-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6"></div>
                     </div>
 
-                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                            <i class="fa-solid fa-city text-skybrand-500"></i> Tutti i 121 Capoluoghi d'Italia con CAP
-                        </h3>
-                        <div id="cities-quick-container" class="flex flex-wrap items-center gap-2 text-xs text-slate-700 max-h-60 overflow-y-auto pr-2"></div>
-                    </div>
                 </div>
             </section>
 
@@ -8501,28 +8495,6 @@ Zungri|VV|`;
             });
         }
 
-        function renderQuickCities() {
-            const container = document.getElementById('cities-quick-container');
-            if (!container) return;
-            container.innerHTML = '';
-            CITIES_WITH_CAP.forEach((cityObj) => {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-50 hover:bg-skybrand-50 hover:text-skybrand-600 border border-slate-200/60 transition text-xs';
-                const formattedName = `${cityObj.name} (${cityObj.cap})`;
-                button.addEventListener('click', () => fillCity(formattedName));
-
-                const icon = document.createElement('i');
-                icon.className = 'fa-solid fa-location-dot text-slate-400 text-[10px]';
-
-                const label = document.createElement('span');
-                label.textContent = formattedName;
-
-                button.append(icon, label);
-                container.appendChild(button);
-            });
-        }
-
         function renderSpecialtyMatches(value) {
             const container = document.getElementById('specialty-autocomplete');
             if (!container) return;
@@ -8712,7 +8684,6 @@ Zungri|VV|`;
 
             setupAutocomplete();
             renderQuickSpecialties();
-            renderQuickCities();
             setupSearchForm();
         });
     </script>
