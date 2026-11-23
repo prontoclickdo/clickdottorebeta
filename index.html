@@ -8488,7 +8488,22 @@ Zungri|VV|`;
             const container = document.getElementById('specialty-autocomplete');
             if (!container) return;
             const query = normalizeText(value);
-            const matches = query ? SPECIALTIES.filter((s) => normalizeText(s.name).includes(query)) : SPECIALTIES.slice(0, 8);
+            const byName = (a, b) => a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+            let matches;
+            if (!query) {
+                matches = SPECIALTIES.slice().sort(byName).slice(0, 8);
+            } else {
+                // Prima le specializzazioni che iniziano con il testo digitato, in ordine alfabetico;
+                // poi quelle in cui il testo è l'inizio di un'altra parola del nome (es. "pediatrica")
+                const startsWith = [];
+                const wordStart = [];
+                SPECIALTIES.forEach((s) => {
+                    const name = normalizeText(s.name);
+                    if (name.startsWith(query)) startsWith.push(s);
+                    else if (name.split(/[\s(\/,'-]+/).some((w) => w.startsWith(query))) wordStart.push(s);
+                });
+                matches = startsWith.sort(byName).concat(wordStart.sort(byName));
+            }
 
             if (!matches.length) {
                 container.classList.add('hidden');
@@ -8497,7 +8512,7 @@ Zungri|VV|`;
             }
 
             container.innerHTML = '';
-            matches.slice(0, 10).forEach((specialty) => {
+            matches.slice(0, 40).forEach((specialty) => {
                 const row = document.createElement('div');
                 row.className = 'px-4 py-2 hover:bg-skybrand-50 text-sm text-slate-700 cursor-pointer flex items-center gap-2.5';
                 row.addEventListener('click', () => selectAutocomplete('specialty-input', specialty.name, 'specialty-autocomplete'));
