@@ -205,8 +205,7 @@
 
         function caricaLuoghi() {
             if (caricamento) return caricamento;
-            $('stato-elenco').hidden = false;
-            $('stato-elenco').innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i>Carico l\'elenco di comuni e province...';
+            // caricamento silenzioso: nessun messaggio mentre arriva l'elenco
             caricamento = fetch('https://cdn.jsdelivr.net/gh/matteocontrini/comuni-json@master/comuni.json')
                 .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
                 .then((dati) => {
