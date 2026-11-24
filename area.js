@@ -829,14 +829,34 @@ function disegnaHub() {
                 <div class="grid grid-cols-2 gap-3">${campo('citta', 'Città')}${campo('telefono', 'Telefono', 'tel')}</div>
                 ${campo('indirizzo', 'Indirizzo')}
                 ${campo('email', 'Email', 'email')}
+                ${campo('coordinate', 'Coordinate sulla mappa (facoltative)', 'text', 'placeholder="Es. 40.6664, 16.6043"')}
+                <p class="text-xs text-slate-500">La posizione sulla mappa pubblica degli hub si ricava da indirizzo e città; scrivi le coordinate solo per correggerla.</p>
                 <button type="submit" class="${btnPrimario} w-full">Aggiungi l'hub</button>
             </form>
             <div class="lg:col-span-3 space-y-3">
                 ${st.hub.length ? st.hub.map((h) => `
-                    <div class="${card} flex items-start justify-between gap-3">
-                        <div><div class="font-semibold text-slate-900">${esc(h.nome)} <span class="font-mono text-xs text-slate-500">${esc(h.codice)}</span></div>
-                        <div class="text-xs text-slate-500">${h.tipo === 'medico' ? 'Medico che fa da hub' : 'Struttura privata'}${h.citta ? ' · ' + esc(h.citta) : ''}${h.email ? ' · ' + esc(h.email) : ''}</div></div>
-                        ${interruttore('hub', h.id, h.attivo)}
+                    <div class="${card} space-y-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div><div class="font-semibold text-slate-900">${esc(h.nome)} <span class="font-mono text-xs text-slate-500">${esc(h.codice)}</span></div>
+                            <div class="text-xs text-slate-500">${h.tipo === 'medico' ? 'Medico che fa da hub' : 'Struttura privata'}${h.citta ? ' · ' + esc(h.citta) : ''}${h.email ? ' · ' + esc(h.email) : ''}</div>
+                            <div class="text-xs mt-1 ${h.lat != null ? 'text-emerald-700' : 'text-amber-700'}"><i class="fa-solid fa-location-dot mr-1"></i>${h.lat != null ? (h.attivo ? 'Visibile sulla mappa degli hub' : 'Ha una posizione, ma non è attivo: non compare sulla mappa') : 'Senza posizione: non compare sulla mappa (aggiungi indirizzo e città)'}</div></div>
+                            ${interruttore('hub', h.id, h.attivo)}
+                        </div>
+                        <details class="text-sm">
+                            <summary class="cursor-pointer text-skybrand-600 font-medium">Modifica dati e posizione</summary>
+                            <form data-admin="aggiorna_hub" class="space-y-3 mt-3">
+                                <input type="hidden" name="id" value="${h.id}">
+                                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Nome</span><input name="nome" required value="${esc(h.nome)}" class="${classeCampo}"></label>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Città</span><input name="citta" value="${esc(h.citta || '')}" class="${classeCampo}"></label>
+                                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Telefono</span><input name="telefono" type="tel" value="${esc(h.telefono || '')}" class="${classeCampo}"></label>
+                                </div>
+                                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Indirizzo</span><input name="indirizzo" value="${esc(h.indirizzo || '')}" class="${classeCampo}"></label>
+                                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Email</span><input name="email" type="email" value="${esc(h.email || '')}" class="${classeCampo}"></label>
+                                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Coordinate (lascia vuoto per ricavarle da indirizzo e città)</span><input name="coordinate" value="" placeholder="${h.lat != null ? `Attuali: ${Number(h.lat).toFixed(5)}, ${Number(h.lng).toFixed(5)}` : 'Es. 40.6664, 16.6043'}" class="${classeCampo}"></label>
+                                <button type="submit" class="${btnSecondario} w-full">Salva</button>
+                            </form>
+                        </details>
                     </div>`).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun hub ancora.</div>`}
             </div>
         </div>`;
@@ -912,7 +932,7 @@ async function inviaAdmin(form) {
         await api('admin', { conAccesso: true, dati });
         const testi = {
             crea_medico: 'Medico aggiunto', crea_prestazione: 'Prestazione aggiunta', crea_hub: 'Hub aggiunto',
-            invita_utente: 'Utenza creata: l\'invito è stato inviato via email', imposta_impostazioni: 'Impostazioni salvate',
+            invita_utente: 'Utenza creata: l\'invito è stato inviato via email', imposta_impostazioni: 'Impostazioni salvate', aggiorna_hub: 'Hub aggiornato',
             registra_regolazione: 'Bonifico registrato',
         };
         if (azione === 'imposta_impostazioni') st.quota = dati.quota_cents;

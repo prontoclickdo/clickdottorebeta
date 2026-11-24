@@ -930,6 +930,31 @@ async function linkAccesso(tipo: "invite" | "recovery", email: string) {
 }
 
 
+// Posizione sulla mappa di un hub a partire da indirizzo e città (OpenStreetMap Nominatim).
+// Se l'indirizzo non si trova, usa il centro della città. Restituisce null se non trova nulla.
+async function geolocalizza(indirizzo: string | null, citta: string | null): Promise<{ lat: number; lng: number } | null> {
+  const tentativi = [[indirizzo, citta].filter(Boolean).join(", "), citta].filter((q, i, a) => q && a.indexOf(q) === i) as string[];
+  for (const q of tentativi) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q=${encodeURIComponent(q + ", Italia")}`;
+      const r = await fetch(url, { headers: { "User-Agent": "ClickDottore/1.0 (prenotazioni@clickdottore.it)", "Accept-Language": "it" } });
+      if (!r.ok) continue;
+      const [primo] = await r.json();
+      if (primo?.lat && primo?.lon) return { lat: Number(primo.lat), lng: Number(primo.lon) };
+    } catch (e) { console.error("Geolocalizzazione non riuscita", e); }
+  }
+  return null;
+}
+
+// Coordinate scritte a mano dall'amministratore, es. "40.6664, 16.6043"
+function coordinateManuali(valore: unknown): { lat: number; lng: number } | null {
+  const m = String(valore ?? "").trim().match(/^(-?\d+(?:\.\d+)?)\s*[,; ]\s*(-?\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  const lat = Number(m[1]), lng = Number(m[2]);
+  if (lat < 35 || lat > 48 || lng < 6 || lng > 19) throw new HttpError(400, "Le coordinate devono essere in Italia (es. 40.6664, 16.6043)");
+  return { lat, lng };
+}
+
 async function admin(req: Request) {
   const io = await utente(req);
   if (io.ruolo !== "admin") throw new HttpError(403, "Solo l'amministratore");
@@ -948,9 +973,26 @@ async function admin(req: Request) {
         telefono: testo(body.telefono, "telefono", 30, false) || null,
       };
       if (!/^[A-Z0-9]{3,10}$/.test(riga.codice)) throw new HttpError(400, "Codice hub: da 3 a 10 lettere maiuscole o cifre");
-      const { data, error } = await db.from("hub").insert(riga).select().single();
+      const pos = coordinateManuali(body.coordinate) ?? await geolocalizza(riga.indirizzo, riga.citta);
+      const { data, error } = await db.from("hub").insert({ ...riga, lat: pos?.lat ?? null, lng: pos?.lng ?? null }).select().single();
       if (error) throw new HttpError(409, error.code === "23505" ? "Codice hub già usato" : "Impossibile creare l'hub");
       await registra(io.id, "crea_hub", null, { id: data.id });
+      return json(req, data);
+    }
+    case "aggiorna_hub": {
+      const id = uuid(body.id, "hub");
+      const riga = {
+        nome: testo(body.nome, "nome", 120),
+        citta: testo(body.citta, "città", 80, false) || null,
+        indirizzo: testo(body.indirizzo, "indirizzo", 160, false) || null,
+        email: testo(body.email, "email", 120, false) || null,
+        telefono: testo(body.telefono, "telefono", 30, false) || null,
+      };
+      const pos = coordinateManuali(body.coordinate) ?? await geolocalizza(riga.indirizzo, riga.citta);
+      const { data, error } = await db.from("hub").update({ ...riga, lat: pos?.lat ?? null, lng: pos?.lng ?? null })
+        .eq("id", id).select().single();
+      if (error || !data) throw new HttpError(404, "Hub non trovato");
+      await registra(io.id, "aggiorna_hub", null, { id, posizione: !!pos });
       return json(req, data);
     }
     case "crea_medico": {

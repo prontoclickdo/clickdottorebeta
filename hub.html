@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <script src="cookie-consent.js?v=3"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trova l'hub più vicino – Click Dottore</title>
+    <meta name="description" content="Mappa degli hub Click Dottore in Italia: cerca la tua città, provincia o CAP e trova la struttura affiliata più vicina dove prenotare di persona.">
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="theme.css">
+    <link rel="icon" href="favicon.ico?v=3" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="icona-32.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icona-192.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="icona-apple-180.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <script>
+        tailwind.config = { theme: { extend: {
+            fontFamily: { sans: ['Inter', 'sans-serif'] },
+            colors: { skybrand: { 50: '#eff5fc', 100: '#dce8f8', 200: '#b9d1f0', 300: '#8db3e5', 400: '#5a8fd6', 500: '#2a71c8', 600: '#31579c', 700: '#284780', 800: '#213a66', 900: '#0f172a' } }
+        } } };
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        html { -webkit-text-size-adjust: 100%; }
+        @media (max-width: 767px) { input, select, textarea { font-size: 16px !important; } }
+        [hidden] { display: none !important; }
+        @media print { header, footer, .no-print { display: none !important; } body { background: #fff; } }
+    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        [hidden] { display: none !important; }
+        .hub-pin { width: 36px; height: 36px; border-radius: 9999px; background: #2a71c8; color: #fff; display: flex; align-items: center; justify-content: center;
+                   border: 3px solid #fff; box-shadow: 0 4px 10px rgba(15, 23, 42, .35); font-size: 15px; }
+        .hub-pin.attivo { background: #31579c; transform: scale(1.15); }
+        .luogo-pin { width: 16px; height: 16px; border-radius: 9999px; background: #2a8a7c; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(15, 23, 42, .35); }
+        .leaflet-popup-content { font-family: Inter, sans-serif; font-size: 13px; line-height: 1.45; color: #0f172a; }
+        .leaflet-container { font-family: Inter, sans-serif; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <header class="bg-white border-b border-slate-200">
+        <div class="max-w-3xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-3">
+            <a href="/" class="flex items-center min-w-0">
+                <picture><source srcset="logo-header-dark.png?v=2" media="(prefers-color-scheme: dark)"><img src="logo.png" alt="clickdottore.it - Sportello medico sanitario" class="h-11 sm:h-12 w-auto object-contain"></picture>
+            </a>
+            <a href="/" class="text-sm text-slate-600 hover:text-skybrand-600 transition"><i class="fa-solid fa-arrow-left mr-1"></i>Torna alla pagina principale</a>
+        </div>
+    </header>
+    <main class="flex-grow w-full max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-5">
+        <header class="text-center space-y-2">
+            <h1 class="text-2xl sm:text-3xl font-bold text-slate-900">Trova l'hub più vicino a te</h1>
+            <p class="text-slate-600 max-w-2xl mx-auto">Gli hub sono strutture e medici affiliati a Click Dottore: puoi andarci di persona per scegliere il medico, prenotare la visita e pagare la quota. La rete cresce: ogni nuovo hub compare sulla mappa.</p>
+        </header>
+
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <label for="luogo" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Città, provincia o CAP</label>
+            <div class="relative">
+                <i class="fa-solid fa-location-dot absolute left-3.5 top-1/2 -translate-y-1/2 text-skybrand-500"></i>
+                <input id="luogo" type="text" autocomplete="off" placeholder="Es. Matera, Provincia di Bari, 75100" class="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400">
+                <div id="suggerimenti" hidden class="absolute z-[1000] left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-y-auto"></div>
+            </div>
+            <p id="stato-elenco" class="text-xs text-slate-500 mt-2" hidden></p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div class="lg:col-span-2">
+                <div id="mappa" class="w-full h-[55vh] min-h-[360px] rounded-2xl border border-slate-200 shadow-sm overflow-hidden z-0"></div>
+            </div>
+            <aside class="space-y-3">
+                <h2 id="titolo-elenco" class="text-sm font-bold text-slate-500 uppercase tracking-wider">Hub in Italia</h2>
+                <div id="elenco-hub" class="space-y-2 lg:max-h-[55vh] lg:overflow-y-auto"></div>
+            </aside>
+        </div>
+    </main>
+    <footer class="bg-slate-900 text-slate-500 py-8 mt-auto">
+        <div class="max-w-5xl mx-auto px-4 text-center text-xs space-y-2">
+            <div class="flex flex-wrap justify-center gap-x-4 gap-y-1"><a href="/" class="hover:text-white transition">Home</a><a href="accedi.html" class="hover:text-white transition">Accedi</a><a href="termini.html" class="hover:text-white transition">Termini del servizio</a><a href="privacy.html" class="hover:text-white transition">Privacy</a><a href="#" data-cookie-settings class="hover:text-white transition">Preferenze cookie</a></div>
+            <div>&copy; 2026 - Click Dottore. Tutti i diritti riservati.</div>
+        </div>
+    </footer>
+    <script type="module">
+        import { supabase, esc } from './app.js';
+        const $ = (id) => document.getElementById(id);
+
+        // ---------------- Mappa ----------------
+        const ITALIA = [[35.4, 6.6], [47.1, 18.6]];
+        const mappa = L.map('mappa', { scrollWheelZoom: false }).fitBounds(ITALIA);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+        }).addTo(mappa);
+        mappa.on('click', () => mappa.scrollWheelZoom.enable());   // la rotella zooma solo dopo un clic sulla mappa
+
+        const iconaHub = (attivo) => L.divIcon({ className: '', html: `<div class="hub-pin${attivo ? ' attivo' : ''}"><i class="fa-solid fa-building"></i></div>`, iconSize: [36, 36], iconAnchor: [18, 18], popupAnchor: [0, -18] });
+        const iconaLuogo = L.divIcon({ className: '', html: '<div class="luogo-pin"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+
+        let hub = [];
+        const marcatori = new Map();
+        let luogoScelto = null, marcatoreLuogo = null;
+
+        const indicazioni = (h) => `https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`;
+        const popup = (h) => `<strong>${esc(h.nome)}</strong><br>${[h.indirizzo, h.citta].filter(Boolean).map(esc).join(', ')}`
+            + (h.telefono ? `<br><a href="tel:${esc(h.telefono)}">${esc(h.telefono)}</a>` : '')
+            + `<br><a href="${indicazioni(h)}" target="_blank" rel="noopener">Indicazioni stradali</a>`;
+
+        function distanzaKm(a, b) {
+            const R = 6371, rad = (x) => x * Math.PI / 180;
+            const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+            const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+            return 2 * R * Math.asin(Math.sqrt(s));
+        }
+
+        function disegnaElenco() {
+            const el = $('elenco-hub');
+            let righe = hub.map((h) => ({ h, km: luogoScelto ? distanzaKm(luogoScelto, h) : null }));
+            if (luogoScelto) righe.sort((a, b) => a.km - b.km); else righe.sort((a, b) => (a.h.citta || '').localeCompare(b.h.citta || '', 'it') || a.h.nome.localeCompare(b.h.nome, 'it'));
+            $('titolo-elenco').textContent = luogoScelto ? `Hub più vicini a ${luogoScelto.nome}` : 'Hub in Italia';
+            if (!righe.length) {
+                el.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-5 text-sm text-slate-600">
+                    <p class="font-semibold text-slate-900 mb-1">La rete degli hub è in costruzione</p>
+                    <p>Non ci sono ancora hub sulla mappa${luogoScelto ? ` vicino a ${esc(luogoScelto.nome)}` : ''}. Nel frattempo puoi <a href="/" class="text-skybrand-600 underline">prenotare online</a> in autonomia.</p></div>`;
+                return;
+            }
+            el.innerHTML = righe.slice(0, 30).map(({ h, km }) => `
+                <button type="button" data-hub="${h.id}" class="w-full text-left bg-white border border-slate-200 hover:border-skybrand-300 rounded-2xl p-4 transition">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0"><div class="font-semibold text-slate-900">${esc(h.nome)}</div>
+                        <div class="text-xs text-slate-500">${[h.indirizzo, h.citta].filter(Boolean).map(esc).join(', ')}</div>
+                        ${h.telefono ? `<div class="text-xs text-slate-500 mt-0.5"><i class="fa-solid fa-phone mr-1"></i>${esc(h.telefono)}</div>` : ''}</div>
+                        ${km != null ? `<span class="shrink-0 text-xs font-semibold text-skybrand-700 bg-skybrand-50 rounded-full px-2 py-0.5">${km < 10 ? km.toFixed(1) : Math.round(km)} km</span>` : ''}
+                    </div>
+                </button>`).join('');
+        }
+
+        $('elenco-hub').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-hub]');
+            if (!b) return;
+            const h = hub.find((x) => x.id === b.dataset.hub);
+            const m = marcatori.get(b.dataset.hub);
+            if (!h || !m) return;
+            mappa.flyTo([h.lat, h.lng], Math.max(mappa.getZoom(), 14), { duration: 0.8 });
+            m.openPopup();
+            if (window.innerWidth < 1024) $('mappa').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+
+        async function caricaHub() {
+            const { data } = await supabase.from('hub_pubblici').select('*');
+            hub = (data || []).filter((h) => Number.isFinite(h.lat) && Number.isFinite(h.lng));
+            hub.forEach((h) => {
+                const m = L.marker([h.lat, h.lng], { icon: iconaHub(false), title: h.nome }).addTo(mappa).bindPopup(popup(h));
+                marcatori.set(h.id, m);
+            });
+            if (hub.length) mappa.fitBounds(L.latLngBounds(hub.map((h) => [h.lat, h.lng])).pad(0.3), { maxZoom: 10 });
+            if (hub.length < 2) mappa.fitBounds(ITALIA);
+            disegnaElenco();
+        }
+
+        // ---------------- Ricerca di comuni, province e CAP ----------------
+        const normalizza = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+            .replace(/['’`´.\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+        let luoghi = null;   // comuni e province
+        let caricamento = null;
+
+        function caricaLuoghi() {
+            if (caricamento) return caricamento;
+            $('stato-elenco').hidden = false;
+            $('stato-elenco').innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i>Carico l\'elenco di comuni e province...';
+            caricamento = fetch('https://cdn.jsdelivr.net/gh/matteocontrini/comuni-json@master/comuni.json')
+                .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+                .then((dati) => {
+                    const province = new Map();
+                    const comuni = dati.map((c) => {
+                        const nome = String(c.nome || '').split('/')[0].trim();
+                        const provincia = c.provincia?.nome || '';
+                        if (provincia && !province.has(provincia)) province.set(provincia, { tipo: 'provincia', nome: provincia, sigla: c.sigla || '', norm: normalizza(provincia), caps: [] });
+                        const caps = (Array.isArray(c.cap) ? c.cap : [c.cap]).filter((x) => /^\d{5}$/.test(String(x)));
+                        return { tipo: 'comune', nome, sigla: c.sigla || '', provincia, regione: c.regione?.nome || '', norm: normalizza(nome), caps };
+                    });
+                    luoghi = [...comuni, ...province.values()];
+                    $('stato-elenco').hidden = true;
+                    if (document.activeElement === $('luogo')) suggerisci($('luogo').value);
+                })
+                .catch(() => {
+                    caricamento = null;
+                    $('stato-elenco').textContent = 'Non riesco a caricare l\'elenco dei comuni: controlla la connessione e riprova.';
+                });
+            return caricamento;
+        }
+
+        function cerca(testo) {
+            const q = normalizza(testo.replace(/\([^)]*\)/g, ' ').replace(/^provincia di /i, ''));
+            if (!q || !luoghi) return [];
+            const perNome = (a, b) => a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' }) || (a.tipo === 'provincia') - (b.tipo === 'provincia');
+            if (/^\d+$/.test(q)) {
+                return luoghi.filter((l) => l.caps.some((c) => c.startsWith(q)))
+                    .map((l) => ({ ...l, cap: l.caps.find((c) => c.startsWith(q)) }))
+                    .sort((a, b) => a.cap.localeCompare(b.cap) || perNome(a, b)).slice(0, 50);
+            }
+            const inizio = [], parola = [];
+            for (const l of luoghi) {
+                if (l.norm.startsWith(q)) inizio.push(l);
+                else if (l.norm.includes(' ' + q)) parola.push(l);
+            }
+            return [...inizio.sort(perNome), ...parola.sort(perNome)].slice(0, 50);
+        }
+
+        let risultati = [];
+        function suggerisci(testo) {
+            const box = $('suggerimenti');
+            if (!String(testo).trim()) { box.hidden = true; box.innerHTML = ''; return; }   // si apre solo dopo almeno una lettera
+            if (!luoghi) { caricaLuoghi(); return; }
+            risultati = cerca(testo);
+            box.innerHTML = risultati.length ? risultati.map((l, i) => `
+                <button type="button" data-i="${i}" class="w-full text-left px-4 py-2 hover:bg-skybrand-50 text-sm text-slate-700 flex items-center justify-between gap-3">
+                    <span>${l.tipo === 'provincia' ? `Provincia di ${esc(l.nome)}` : `${esc(l.nome)} <span class="text-slate-400">(${esc(l.sigla)})</span>`}</span>
+                    <span class="text-xs text-slate-400 shrink-0">${l.tipo === 'provincia' ? 'Provincia' : esc(l.cap || l.caps[0] || '')}</span>
+                </button>`).join('')
+                : '<div class="px-4 py-3 text-sm text-slate-500">Nessun comune o provincia trovato</div>';
+            box.hidden = false;
+        }
+
+        async function scegli(l) {
+            $('suggerimenti').hidden = true;
+            $('luogo').value = l.tipo === 'provincia' ? `Provincia di ${l.nome}` : `${l.nome} (${l.sigla})`;
+            const q = l.tipo === 'provincia' ? `Provincia di ${l.nome}, Italia` : `${l.nome}, ${l.provincia}, Italia`;
+            try {
+                const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&accept-language=it&q=${encodeURIComponent(q)}`);
+                const [p] = await r.json();
+                if (!p) throw new Error();
+                luogoScelto = { nome: l.tipo === 'provincia' ? `provincia di ${l.nome}` : l.nome, lat: Number(p.lat), lng: Number(p.lon) };
+                if (marcatoreLuogo) marcatoreLuogo.remove();
+                marcatoreLuogo = L.marker([luogoScelto.lat, luogoScelto.lng], { icon: iconaLuogo, title: l.nome, zIndexOffset: -100 }).addTo(mappa);
+                mappa.flyTo([luogoScelto.lat, luogoScelto.lng], l.tipo === 'provincia' ? 9 : 12, { duration: 1 });
+            } catch (_) {
+                luogoScelto = null;
+                $('stato-elenco').hidden = false;
+                $('stato-elenco').textContent = 'Non riesco a trovare questo luogo sulla mappa, riprova tra poco.';
+            }
+            disegnaElenco();
+        }
+
+        $('luogo').addEventListener('focus', () => { caricaLuoghi(); });
+        $('luogo').addEventListener('input', (e) => suggerisci(e.target.value));
+        $('suggerimenti').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-i]');
+            if (b) scegli(risultati[Number(b.dataset.i)]);
+        });
+        $('luogo').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); if (risultati[0] && !$('suggerimenti').hidden) scegli(risultati[0]); }
+            if (e.key === 'Escape') $('suggerimenti').hidden = true;
+        });
+        document.addEventListener('click', (e) => { if (!e.target.closest('#suggerimenti, #luogo')) $('suggerimenti').hidden = true; });
+
+        caricaHub();
+    </script>
+</body>
+</html>
