@@ -39,7 +39,7 @@
   }
 
   var css = '\
-#pcd-ck,#pcd-ck-modal{--bg:#fff;--fg:#1e293b;--mut:#64748b;--bd:#e2e8f0;--br:#0284c7;--brh:#0369a1;font-family:Inter,system-ui,sans-serif;color:var(--fg)}\
+#pcd-ck,#pcd-ck-modal{--bg:#fff;--fg:#1e293b;--mut:#64748b;--bd:#e2e8f0;--br:#2a71c8;--brh:#31579c;font-family:Inter,system-ui,sans-serif;color:var(--fg)}\
 html.dark #pcd-ck,html.dark #pcd-ck-modal{--bg:#0f172a;--fg:#e2e8f0;--mut:#94a3b8;--bd:#334155}\
 #pcd-ck{position:fixed;left:12px;right:12px;bottom:12px;z-index:9998;max-width:760px;margin:0 auto;background:var(--bg);border:1px solid var(--bd);border-radius:16px;box-shadow:0 20px 50px rgba(15,23,42,.25);padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px))}\
 #pcd-ck h2{margin:0 0 6px;font-size:16px;font-weight:700}\

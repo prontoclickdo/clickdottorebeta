@@ -18,10 +18,10 @@ html.dark .bg-slate-50 { background-color: #0b1220; }
 html.dark .bg-slate-50\/50 { background-color: rgba(11, 18, 32, .65); }
 html.dark .bg-slate-100 { background-color: #1a2640; }
 html.dark .hover\:bg-slate-50:hover { background-color: #162239; }
-html.dark .hero-bg { background: linear-gradient(135deg, #0c2a43 0%, #0f2237 50%, #0b1220 100%); }
+html.dark .hero-bg { background: linear-gradient(135deg, #10284d 0%, #0f1f3d 50%, #0b1220 100%); }
 
-html.dark .from-skybrand-100 { --tw-gradient-from: #0c2a43 var(--tw-gradient-from-position); --tw-gradient-to: rgb(12 42 67 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
-html.dark .to-skybrand-50 { --tw-gradient-to: #0f2237 var(--tw-gradient-to-position); }
+html.dark .from-skybrand-100 { --tw-gradient-from: #10284d var(--tw-gradient-from-position); --tw-gradient-to: rgb(16 40 77 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+html.dark .to-skybrand-50 { --tw-gradient-to: #0f1f3d var(--tw-gradient-to-position); }
 
 /* ---------- Testi ---------- */
 html.dark .text-slate-900,
@@ -44,19 +44,19 @@ html.dark .divide-slate-100 > * + * { border-color: #1b2741; }
 
 /* ---------- Colore del marchio ---------- */
 html.dark .text-skybrand-500,
-html.dark .text-skybrand-600 { color: #38bdf8; }
-html.dark .text-skybrand-700 { color: #7dd3fc; }
+html.dark .text-skybrand-600 { color: #7aa7e6; }
+html.dark .text-skybrand-700 { color: #a9c6f0; }
 html.dark .hover\:text-skybrand-600:hover,
 html.dark .hover\:text-skybrand-700:hover,
-html.dark .group:hover .group-hover\:text-skybrand-700 { color: #7dd3fc; }
-html.dark .focus\:ring-skybrand-200:focus { --tw-ring-color: rgba(56, 189, 248, .35); }
-html.dark .bg-skybrand-50 { background-color: rgba(56, 189, 248, .10); }
-html.dark .bg-skybrand-100 { background-color: rgba(56, 189, 248, .18); }
-html.dark .hover\:bg-skybrand-50:hover { background-color: rgba(56, 189, 248, .14); }
+html.dark .group:hover .group-hover\:text-skybrand-700 { color: #a9c6f0; }
+html.dark .focus\:ring-skybrand-200:focus { --tw-ring-color: rgba(122, 167, 230, .35); }
+html.dark .bg-skybrand-50 { background-color: rgba(122, 167, 230, .10); }
+html.dark .bg-skybrand-100 { background-color: rgba(122, 167, 230, .18); }
+html.dark .hover\:bg-skybrand-50:hover { background-color: rgba(122, 167, 230, .14); }
 html.dark .border-skybrand-200,
-html.dark .border-skybrand-300 { border-color: rgba(56, 189, 248, .35); }
+html.dark .border-skybrand-300 { border-color: rgba(122, 167, 230, .35); }
 html.dark .hover\:border-skybrand-300:hover,
-html.dark .hover\:border-skybrand-400:hover { border-color: #38bdf8; }
+html.dark .hover\:border-skybrand-400:hover { border-color: #7aa7e6; }
 
 /* ---------- Stati (errore / ok / attenzione) ---------- */
 html.dark .bg-red-50 { background-color: rgba(239, 68, 68, .12); }
@@ -69,6 +69,12 @@ html.dark .text-emerald-700 { color: #6ee7b7; }
 html.dark .border-emerald-200 { border-color: rgba(16, 185, 129, .35); }
 html.dark .bg-amber-50 { background-color: rgba(245, 158, 11, .13); }
 html.dark .text-amber-600 { color: #fbbf24; }
+html.dark .text-amber-700, html.dark .text-amber-800, html.dark .text-amber-900 { color: #fcd34d; }
+html.dark .text-amber-900\/80 { color: rgba(252, 211, 77, .85); }
+html.dark .border-amber-200, html.dark .border-amber-300 { border-color: rgba(245, 158, 11, .4); }
+html.dark .text-emerald-800 { color: #6ee7b7; }
+html.dark .hover\:text-red-800:hover { color: #fca5a5; }
+html.dark .bg-slate-900.text-white { background-color: #2a71c8; }
 
 /* ---------- Varie ---------- */
 html.dark .shadow-xl, html.dark .shadow-2xl, html.dark .shadow-sm, html.dark .shadow-md { --tw-shadow-color: rgba(0, 0, 0, .45); }

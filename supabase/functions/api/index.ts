@@ -244,7 +244,7 @@ function layoutEmail(titolo: string, corpo: string): string {
 }
 
 function boxCodice(codice: string): string {
-  return `<div style="margin:16px 0;padding:14px 18px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;font-size:13px;color:#334155">Codice prenotazione<br><span style="font-size:22px;font-weight:bold;letter-spacing:1px;color:#1e3a8a;font-family:'Courier New',monospace">${esc(codice)}</span></div>`;
+  return `<div style="margin:16px 0;padding:14px 18px;border-radius:12px;background:#eff5fc;border:1px solid #b9d1f0;font-size:13px;color:#334155">Codice prenotazione<br><span style="font-size:22px;font-weight:bold;letter-spacing:1px;color:#31579c;font-family:'Courier New',monospace">${esc(codice)}</span></div>`;
 }
 
 async function caricaPrenotazione(id: string) {
@@ -1007,7 +1007,7 @@ async function admin(req: Request) {
       await inviaEmail(email, "Il tuo accesso a Click Dottore", layoutEmail("Benvenuto in Click Dottore", `
         <p>Ciao ${esc(nome)},<br>è stata creata per te un'utenza ${ruolo === "admin" ? "di amministratore" : ruolo === "medico" ? "medico" : "di operatore"} su Click Dottore.</p>
         <p>Per attivarla scegli la tua password con il pulsante qui sotto. Il link vale per 24 ore.</p>
-        <p><a href="${esc(link)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">Scegli la password</a></p>`));
+        <p><a href="${esc(link)}" style="display:inline-block;background:#2a71c8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">Scegli la password</a></p>`));
       await registra(io.id, "invita_utente", null, { email, ruolo });
       return json(req, { ok: true });
     }
@@ -1081,7 +1081,7 @@ async function recuperoPassword(req: Request) {
   const { link } = await linkAccesso("recovery", email);
   await inviaEmail(email, "Reimposta la tua password di Click Dottore", layoutEmail("Reimposta la password", `
     <p>Ciao ${esc(prof.nome)},<br>abbiamo ricevuto una richiesta di reimpostare la password della tua utenza.</p>
-    <p><a href="${esc(link)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">Scegli una nuova password</a></p>
+    <p><a href="${esc(link)}" style="display:inline-block;background:#2a71c8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">Scegli una nuova password</a></p>
     <p style="color:#64748b;font-size:13px">Se non sei stato tu, ignora questa email: la password resta quella di prima.</p>`));
   await registra(prof.id, "recupero_password", null);
   return rispostaNeutra;
@@ -1091,7 +1091,7 @@ async function recuperoPassword(req: Request) {
 // Account dei pazienti
 // ---------------------------------------------------------------------
 const pulsanteEmail = (link: string, testo: string) =>
-  `<p><a href="${esc(link)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">${esc(testo)}</a></p>`;
+  `<p><a href="${esc(link)}" style="display:inline-block;background:#2a71c8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">${esc(testo)}</a></p>`;
 
 async function emailGiaRegistrato(email: string) {
   await inviaEmail(email, "Hai già un account Click Dottore", layoutEmail("Hai già un account", `
@@ -1179,7 +1179,7 @@ async function promemoria(req: Request) {
     try {
       const p = await caricaPrenotazione(r.id);
       const daPagare = p.canale === "hub" && !p.pagata_il
-        ? `<p>La quota di prenotazione di ${euro(p.quota_cents)} risulta ancora da pagare: puoi saldarla presso ${esc(p.hub?.nome ?? "la struttura")}${p.token_pagamento ? ` oppure <a href="${SITE}/paga.html?t=${p.token_pagamento}" style="color:#0284c7">online con il bollettino</a>` : ""}.</p>`
+        ? `<p>La quota di prenotazione di ${euro(p.quota_cents)} risulta ancora da pagare: puoi saldarla presso ${esc(p.hub?.nome ?? "la struttura")}${p.token_pagamento ? ` oppure <a href="${SITE}/paga.html?t=${p.token_pagamento}" style="color:#2a71c8">online con il bollettino</a>` : ""}.</p>`
         : "";
       await inviaEmail(p.paziente_email, `Promemoria: domani la tua visita ${p.codice}`, layoutEmail("Domani hai una visita", `
         <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>ti ricordiamo l'appuntamento di domani.</p>
