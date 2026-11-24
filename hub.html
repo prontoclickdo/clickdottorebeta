@@ -91,10 +91,14 @@
         const mappa = L.map('mappa', {
             scrollWheelZoom: true, minZoom: 5, maxBounds: L.latLngBounds(ITALIA).pad(0.15), maxBoundsViscosity: 1,
         }).fitBounds(ITALIA);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        // la mappa resta invisibile finché la copertura dei paesi vicini non è pronta
+        const strato = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            opacity: 0,
             maxZoom: 18,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+            bounds: L.latLngBounds(ITALIA).pad(0.15),   // le immagini della mappa si scaricano solo per l'area dell'Italia
         }).addTo(mappa);
+        mappa.getContainer().style.background = getComputedStyle(document.body).backgroundColor;
 
         // Tutto ciò che è fuori dall'Italia viene coperto con il colore di sfondo della pagina
         // (San Marino e Vaticano, all'interno del contorno, restano visibili). Il contorno è allargato di circa 600 metri
@@ -139,13 +143,20 @@
                     poligoni.forEach((p) => contorni.push(allarga(p[0])));
                 }
                 if (!contorni.length) return;
+                // la copertura viene disegnata su un'area molto più grande della vista (padding 3 = 3 volte per lato):
+                // così, mentre si ingrandisce o si rimpicciolisce, i paesi vicini non compaiono nemmeno per un istante
+                const disegno = L.svg({ padding: 3 });
                 maschera = L.polygon([[[-89, -179], [-89, 179], [89, 179], [89, -179]], ...contorni], {
-                    stroke: false, fillColor: coloreSfondo(), fillOpacity: 1, interactive: false,
+                    renderer: disegno, stroke: false, fillColor: coloreSfondo(), fillOpacity: 1, interactive: false,
                 }).addTo(mappa);
-                L.polyline(contorni.map((c) => [...c, c[0]]), { color: '#2a71c8', weight: 1.5, opacity: 0.7, interactive: false }).addTo(mappa);
+                L.polyline(contorni.map((c) => [...c, c[0]]), { renderer: disegno, color: '#2a71c8', weight: 1.5, opacity: 0.7, interactive: false }).addTo(mappa);
                 // se cambia il tema chiaro/scuro del dispositivo, la copertura segue il nuovo sfondo
-                matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTimeout(() => maschera?.setStyle({ fillColor: coloreSfondo() }), 50));
-            } catch (_) { /* senza la copertura la mappa resta comunque limitata all'Italia */ }
+                strato.setOpacity(1);
+                matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTimeout(() => {
+                    maschera?.setStyle({ fillColor: coloreSfondo() });
+                    mappa.getContainer().style.background = coloreSfondo();
+                }, 50));
+            } catch (_) { strato.setOpacity(1); /* senza la copertura la mappa resta comunque limitata all'Italia */ }
         })();
 
         const iconaHub = (attivo) => L.divIcon({ className: '', html: `<div class="hub-pin${attivo ? ' attivo' : ''}"><i class="fa-solid fa-building"></i></div>`, iconSize: [36, 36], iconAnchor: [18, 18], popupAnchor: [0, -18] });
