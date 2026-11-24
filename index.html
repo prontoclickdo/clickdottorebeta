@@ -4,6 +4,8 @@
     <script>
         // link di invito o recupero password inviati da Supabase: li porto alla pagina per scegliere la password
         if (/(^|&)type=(invite|recovery)(&|$)/.test(location.hash.slice(1))) location.replace('imposta-password.html' + location.hash);
+        // indirizzo pulito: clickdottore.it/ invece di clickdottore.it/index.html
+        else if (/\/index\.html$/.test(location.pathname)) history.replaceState(null, '', location.pathname.replace(/index\.html$/, '') + location.search + location.hash);
     </script>
     <script src="cookie-consent.js"></script>
     <meta charset="UTF-8">

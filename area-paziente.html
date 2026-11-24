@@ -32,7 +32,7 @@
 <body class="min-h-screen flex flex-col">
     <header class="bg-white border-b border-slate-200">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-3">
-            <a href="index.html" class="flex items-center min-w-0">
+            <a href="/" class="flex items-center min-w-0">
                 <picture><source srcset="logo-header-dark.png?v=2" media="(prefers-color-scheme: dark)"><img src="logo.png" alt="clickdottore.it - Sportello medico sanitario" class="h-11 sm:h-12 w-auto object-contain"></picture>
             </a>
             <div id="testata-destra" class="flex items-center gap-3 text-sm"></div>
@@ -47,7 +47,7 @@
                     <h1 id="saluto" class="text-xl font-bold text-slate-900"></h1>
                     <p class="text-sm text-slate-500">Cerca lo specialista, scegli l'orario e invia la richiesta: i tuoi dati saranno già compilati.</p>
                 </div>
-                <a href="index.html" class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition shadow-md shadow-skybrand-500/20"><i class="fa-solid fa-magnifying-glass"></i> Prenota una visita</a>
+                <a href="/" class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition shadow-md shadow-skybrand-500/20"><i class="fa-solid fa-magnifying-glass"></i> Prenota una visita</a>
             </section>
 
             <section>
@@ -86,7 +86,7 @@
     </main>
     <footer class="bg-slate-900 text-slate-500 py-8 mt-auto">
         <div class="max-w-5xl mx-auto px-4 text-center text-xs space-y-2">
-            <div class="flex flex-wrap justify-center gap-x-4 gap-y-1"><a href="index.html" class="hover:text-white transition">Home</a><a href="accedi.html" class="hover:text-white transition">Accedi</a><a href="termini.html" class="hover:text-white transition">Termini del servizio</a><a href="privacy.html" class="hover:text-white transition">Privacy</a><a href="#" data-cookie-settings class="hover:text-white transition">Preferenze cookie</a></div>
+            <div class="flex flex-wrap justify-center gap-x-4 gap-y-1"><a href="/" class="hover:text-white transition">Home</a><a href="accedi.html" class="hover:text-white transition">Accedi</a><a href="termini.html" class="hover:text-white transition">Termini del servizio</a><a href="privacy.html" class="hover:text-white transition">Privacy</a><a href="#" data-cookie-settings class="hover:text-white transition">Preferenze cookie</a></div>
             <div>&copy; 2026 - Click Dottore. Tutti i diritti riservati.</div>
         </div>
     </footer>
@@ -141,7 +141,7 @@
         document.addEventListener('click', async (e) => {
             if (!e.target.closest('[data-esci]')) return;
             await supabase.auth.signOut();
-            location.replace('index.html');
+            location.replace('/');
         });
 
         const { data: s } = await supabase.auth.getSession();
@@ -199,7 +199,7 @@
             if (error) { el.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-6 text-sm text-red-700">Impossibile caricare le prenotazioni, ricarica la pagina.</div>`; return; }
             if (!righe.length) {
                 el.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-500">
-                    Non hai ancora richieste di prenotazione. <a href="index.html" class="text-skybrand-600 font-medium hover:text-skybrand-700">Cerca uno specialista</a></div>`;
+                    Non hai ancora richieste di prenotazione. <a href="/" class="text-skybrand-600 font-medium hover:text-skybrand-700">Cerca uno specialista</a></div>`;
                 return;
             }
             el.innerHTML = righe.map((p) => {

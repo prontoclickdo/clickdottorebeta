@@ -382,7 +382,7 @@ async function avvisaRifiuto(p: Pren) {
       <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>${esc(nomeMedico(p))} non può accettare la richiesta per ${esc(dataOra(p.visita_il))}.</p>
       ${motivo}
       <p>Non ti è stato addebitato nulla. Puoi scegliere un altro orario o un altro medico.</p>
-      ${pulsanteEmail(`${SITE}/index.html`, "Cerca un altro orario")}`));
+      ${pulsanteEmail(`${SITE}/`, "Cerca un altro orario")}`));
   } else if (p.hub?.email) {
     await inviaEmail(p.hub.email, `Richiesta rifiutata ${p.codice}`, layoutEmail("Richiesta rifiutata dal medico", `
       <p>${esc(nomeMedico(p))} ha rifiutato la richiesta per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))}
@@ -467,7 +467,7 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
       await inviaEmail(p.paziente_email, `Pagamento rimborsato ${p.codice}`, layoutEmail("Pagamento rimborsato", `
         <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>il pagamento è arrivato dopo la scadenza e nel frattempo l'orario
         è stato prenotato da un altro paziente. Ti abbiamo rimborsato la quota di ${euro(p.quota_cents)}: la vedrai sulla carta entro alcuni giorni lavorativi.</p>
-        ${pulsanteEmail(`${SITE}/index.html`, "Scegli un altro orario")}`));
+        ${pulsanteEmail(`${SITE}/`, "Scegli un altro orario")}`));
     } else if (p.canale === "online") {
       await avvisaVisitaConfermata(p, { medico: true });
     } else {
