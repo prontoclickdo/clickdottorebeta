@@ -38,6 +38,11 @@ async function avvia() {
     const { data: profilo } = await supabase.from('profili')
         .select('*, hub:hub(nome, codice, tipo), medico:medici(nome, cognome)')
         .eq('id', s.session.user.id).maybeSingle();
+    if (!profilo) {
+        // account di un paziente: ha la sua area personale
+        const { data: paz } = await supabase.from('pazienti').select('id').eq('id', s.session.user.id).maybeSingle();
+        if (paz) return location.replace('area-paziente.html');
+    }
     $('caricamento').hidden = true;
     $('testata-destra').innerHTML = `
         <span class="hidden sm:block text-right leading-tight"><span class="block font-semibold text-slate-800">${esc(profilo?.nome || s.session.user.email)}</span>

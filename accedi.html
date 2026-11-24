@@ -4,7 +4,7 @@
     <script src="cookie-consent.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Area riservata – Click Dottore</title>
+    <title>Accedi – Click Dottore</title>
     <meta name="robots" content="noindex">
     <script src="theme.js"></script>
     <link rel="stylesheet" href="theme.css">
@@ -41,8 +41,8 @@
     <main class="flex-grow w-full max-w-md mx-auto px-4 sm:px-6 py-12">
         <section class="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm">
             <div id="vista-accesso">
-                <h1 class="text-xl font-bold text-slate-900 mb-1">Area riservata</h1>
-                <p class="text-sm text-slate-500 mb-6">Per strutture, medici e amministratori di Click Dottore.</p>
+                <h1 class="text-xl font-bold text-slate-900 mb-1">Accedi</h1>
+                <p class="text-sm text-slate-500 mb-6">Per pazienti registrati, strutture, medici e amministratori di Click Dottore.</p>
                 <form id="form-accesso" class="space-y-4" novalidate>
                     <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Email</span>
                         <input name="email" type="email" autocomplete="username" required class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"></label>
@@ -52,12 +52,15 @@
                     <button type="submit" id="btn-accedi" class="w-full px-5 py-3 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition disabled:opacity-60">Accedi</button>
                 </form>
                 <button type="button" id="link-recupero" class="mt-4 text-sm text-skybrand-600 hover:text-skybrand-700 font-medium">Password dimenticata?</button>
-                <p class="mt-6 text-xs text-slate-400">Le utenze sono create da Click Dottore. Se sei una struttura o un medico e vuoi aderire, contattaci.</p>
+                <div class="mt-6 pt-5 border-t border-slate-200 space-y-2">
+                    <p class="text-sm text-slate-600">Sei un paziente e non hai ancora un account? <a href="registrati.html" class="text-skybrand-600 hover:text-skybrand-700 font-semibold">Registrati</a></p>
+                    <p class="text-xs text-slate-400">Le utenze di strutture e medici sono create da Click Dottore. Se vuoi aderire, contattaci.</p>
+                </div>
             </div>
 
             <div id="vista-recupero" hidden>
                 <h1 class="text-xl font-bold text-slate-900 mb-1">Reimposta la password</h1>
-                <p class="text-sm text-slate-500 mb-6">Inserisci l'email della tua utenza: ti invieremo un link per sceglierne una nuova.</p>
+                <p class="text-sm text-slate-500 mb-6">Inserisci l'email del tuo account: ti invieremo un link per sceglierne una nuova.</p>
                 <form id="form-recupero" class="space-y-4" novalidate>
                     <input name="email" type="email" autocomplete="username" required placeholder="nome@esempio.it" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400">
                     <div id="msg-recupero" hidden></div>
@@ -69,7 +72,7 @@
     </main>
     <footer class="bg-slate-900 text-slate-500 py-8 mt-auto">
         <div class="max-w-5xl mx-auto px-4 text-center text-xs space-y-2">
-            <div class="flex justify-center gap-4"><a href="index.html" class="hover:text-white transition">Home</a><a href="accedi.html" class="hover:text-white transition">Area riservata</a><a href="#" data-cookie-settings class="hover:text-white transition">Preferenze cookie</a></div>
+            <div class="flex justify-center gap-4"><a href="index.html" class="hover:text-white transition">Home</a><a href="accedi.html" class="hover:text-white transition">Accedi</a><a href="#" data-cookie-settings class="hover:text-white transition">Preferenze cookie</a></div>
             <div>&copy; 2026 - Click Dottore. Tutti i diritti riservati.</div>
         </div>
     </footer>
@@ -77,8 +80,12 @@
         import { supabase, api, messaggio } from './app.js';
         const $ = (id) => document.getElementById(id);
 
+        // dopo l'accesso torna alla prenotazione, se si arriva da lì
+        const torna = new URLSearchParams(location.search).get('torna') || '';
+        const destinazione = /^prenota\.html\?[\w=&%-]*$/.test(torna) ? torna : 'area.html';
+
         const { data: s } = await supabase.auth.getSession();
-        if (s.session) location.replace('area.html');
+        if (s.session) location.replace(destinazione);
 
         $('link-recupero').addEventListener('click', () => { $('vista-accesso').hidden = true; $('vista-recupero').hidden = false; });
         $('link-accesso').addEventListener('click', () => { $('vista-recupero').hidden = true; $('vista-accesso').hidden = false; });
@@ -91,11 +98,13 @@
             const { error } = await supabase.auth.signInWithPassword({ email: f.email.value.trim().toLowerCase(), password: f.password.value });
             if (error) {
                 $('msg-accesso').hidden = false;
-                messaggio($('msg-accesso'), /invalid/i.test(error.message) ? 'Email o password non corretti' : 'Accesso non riuscito, riprova tra poco');
+                messaggio($('msg-accesso'), /invalid/i.test(error.message) ? 'Email o password non corretti'
+                    : /confirm/i.test(error.message) ? "Prima conferma la tua email con il link che ti abbiamo inviato"
+                    : 'Accesso non riuscito, riprova tra poco');
                 btn.disabled = false; btn.textContent = 'Accedi';
                 return;
             }
-            location.replace('area.html');
+            location.replace(destinazione);
         });
 
         $('form-recupero').addEventListener('submit', async (e) => {
@@ -105,7 +114,7 @@
             try {
                 await api('recupero-password', { dati: { email: e.currentTarget.email.value.trim() } });
                 $('msg-recupero').hidden = false;
-                messaggio($('msg-recupero'), "Se l'email corrisponde a un'utenza attiva, riceverai a breve il link per reimpostare la password.", 'ok');
+                messaggio($('msg-recupero'), "Se l'email corrisponde a un account attivo, riceverai a breve il link per reimpostare la password. Controlla anche nella cartella spam.", 'ok');
             } catch (err) {
                 $('msg-recupero').hidden = false;
                 messaggio($('msg-recupero'), err.message);

@@ -35,7 +35,7 @@
             <a href="index.html" class="flex items-center min-w-0">
                 <picture><source srcset="logo-header-dark.png?v=2" media="(prefers-color-scheme: dark)"><img src="logo.png" alt="clickdottore.it - Sportello medico sanitario" class="h-11 sm:h-12 w-auto object-contain"></picture>
             </a>
-            <div id="testata-destra" class="flex items-center gap-3 text-sm"><a href="accedi.html" class="text-slate-500 hover:text-skybrand-600 transition"><i class="fa-solid fa-lock mr-1"></i>Area riservata</a></div>
+            <div id="testata-destra" class="flex items-center gap-3 text-sm"></div>
         </div>
     </header>
     <main class="flex-grow w-full max-w-3xl mx-auto px-4 sm:px-6 py-8">
@@ -50,6 +50,7 @@
 
         <div id="contenuto" hidden class="space-y-5">
             <div id="avviso-annullato" hidden></div>
+            <div id="avviso-account" hidden class="rounded-xl border px-4 py-3 text-sm"></div>
 
             <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 flex items-center gap-4">
                 <div class="w-14 h-14 rounded-2xl bg-skybrand-50 text-skybrand-500 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-user-doctor"></i></div>
@@ -106,7 +107,7 @@
     </main>
     <footer class="bg-slate-900 text-slate-500 py-8 mt-auto">
         <div class="max-w-5xl mx-auto px-4 text-center text-xs space-y-2">
-            <div class="flex justify-center gap-4"><a href="index.html" class="hover:text-white transition">Home</a><a href="accedi.html" class="hover:text-white transition">Area riservata</a><a href="#" data-cookie-settings class="hover:text-white transition">Preferenze cookie</a></div>
+            <div class="flex justify-center gap-4"><a href="index.html" class="hover:text-white transition">Home</a><a href="accedi.html" class="hover:text-white transition">Accedi</a><a href="#" data-cookie-settings class="hover:text-white transition">Preferenze cookie</a></div>
             <div>&copy; 2026 - Click Dottore. Tutti i diritti riservati.</div>
         </div>
     </footer>
@@ -117,13 +118,20 @@
         const medicoId = params.get('medico') || '';
         const CHIAVE = 'cd-prenotazione-' + medicoId;
         const $ = (id) => document.getElementById(id);
-        let medico, prestazioni = [], quota = null, richiesta = null;
+        let medico, prestazioni = [], quota = null, richiesta = null, paziente = null;
 
         function salvaBozza(dati) { try { sessionStorage.setItem(CHIAVE, JSON.stringify(dati)); } catch (_) {} }
         function leggiBozza() { try { return JSON.parse(sessionStorage.getItem(CHIAVE) || 'null'); } catch (_) { return null; } }
 
         async function avvia() {
             if (!/^[0-9a-f-]{36}$/i.test(medicoId)) return nonTrovato();
+            // paziente registrato: dati già compilati e prenotazione collegata al suo account
+            const { data: sess } = await supabase.auth.getSession();
+            if (sess.session) {
+                const { data: paz } = await supabase.from('pazienti').select('*').eq('id', sess.session.user.id).maybeSingle();
+                paziente = paz || null;
+            }
+            testata();
             const [{ data: m }, { data: pr }, q] = await Promise.all([
                 supabase.from('medici_pubblici').select('*').eq('id', medicoId).maybeSingle(),
                 supabase.from('prestazioni_pubbliche').select('*').eq('medico_id', medicoId).order('nome'),
@@ -144,13 +152,34 @@
                     ${p.descrizione ? `<span class="block text-xs text-slate-500 mt-0.5">${esc(p.descrizione)}</span>` : ''}
                     ${p.prezzo_visita_cents != null ? `<span class="block text-xs text-slate-500 mt-0.5">Costo indicativo della visita: ${euro(p.prezzo_visita_cents)}</span>` : ''}</span>
                 </label>`).join('');
-            $('campi-paziente').innerHTML = htmlCampiPaziente({ ...(bozza.paziente || {}), note: bozza.note || '' });
+            const datiAccount = paziente ? {
+                nome: paziente.nome, cognome: paziente.cognome, codice_fiscale: paziente.codice_fiscale,
+                data_nascita: paziente.data_nascita, telefono: paziente.telefono, email: paziente.email,
+            } : {};
+            $('campi-paziente').innerHTML = htmlCampiPaziente({ ...datiAccount, ...(bozza.paziente || {}), note: bozza.note || '' });
+            const av = $('avviso-account');
+            av.hidden = false;
+            const torna = encodeURIComponent(`prenota.html?medico=${medicoId}`);
+            if (paziente) {
+                av.className = 'rounded-xl border px-4 py-3 text-sm bg-emerald-50 border-emerald-200 text-emerald-800';
+                av.innerHTML = `<i class="fa-solid fa-circle-check mr-1.5"></i>Hai effettuato l'accesso come <strong>${esc(paziente.nome)} ${esc(paziente.cognome)}</strong>: i tuoi dati sono già compilati e la prenotazione comparirà nella <a href="area-paziente.html" class="underline font-medium">tua area</a>.`;
+            } else {
+                av.className = 'rounded-xl border px-4 py-3 text-sm bg-skybrand-50 border-skybrand-200 text-slate-700';
+                av.innerHTML = `Hai un account? <a href="accedi.html?torna=${torna}" class="text-skybrand-600 font-semibold underline">Accedi</a> per compilare i dati in automatico e ritrovare la prenotazione nella tua area. Non hai un account? <a href="registrati.html" class="text-skybrand-600 font-semibold underline">Registrati</a>, oppure prosegui senza account.`;
+            }
             if (params.get('annullato')) {
                 $('avviso-annullato').hidden = false;
                 messaggio($('avviso-annullato'), 'Il pagamento non è stato completato e non ti è stato addebitato nulla. Controlla i dati e riprova quando vuoi.', 'info');
             }
             $('caricamento').hidden = true;
             $('contenuto').hidden = false;
+        }
+
+        function testata() {
+            $('testata-destra').innerHTML = paziente
+                ? `<a href="area-paziente.html" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 text-slate-700 hover:border-skybrand-400 transition"><i class="fa-solid fa-user"></i><span class="hidden sm:inline">La mia area</span></a>`
+                : `<a href="accedi.html?torna=${encodeURIComponent(`prenota.html?medico=${medicoId}`)}" class="text-slate-600 hover:text-skybrand-600 transition">Accedi</a>
+                   <a href="registrati.html" class="px-3.5 py-2 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition">Registrati</a>`;
         }
 
         function nonTrovato() { $('caricamento').hidden = true; $('non-trovato').hidden = false; }
@@ -200,7 +229,7 @@
             btn.disabled = true;
             $('btn-paga-testo').textContent = 'Apertura del pagamento...';
             try {
-                const { url } = await api('prenota-online', { dati: richiesta });
+                const { url } = await api('prenota-online', { dati: richiesta, conAccesso: !!paziente });
                 location.href = url;
             } catch (err) {
                 $('errori-pagamento').hidden = false;

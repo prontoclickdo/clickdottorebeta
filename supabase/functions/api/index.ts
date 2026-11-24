@@ -9,6 +9,8 @@
 //   POST /api/aggiorna-prenotazione   presa in carico, data visita, annullamento...
 //   POST /api/admin                   gestione hub, medici, prestazioni, utenze, quota
 //   POST /api/recupero-password       link per reimpostare la password
+//   POST /api/registrati              registrazione del paziente (email di conferma)
+//   POST /api/aggiorna-profilo        il paziente aggiorna i propri dati
 //
 // Segreti richiesti (Edge Functions > Secrets):
 //   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY
@@ -141,6 +143,16 @@ async function utente(req: Request): Promise<Profilo> {
   const { data: profilo } = await db.from("profili").select("*").eq("id", data.user.id).maybeSingle();
   if (!profilo || !profilo.attivo) throw new HttpError(403, "Utenza non abilitata");
   return profilo as Profilo;
+}
+
+// Paziente registrato: restituisce l'id se il token appartiene a un account paziente, altrimenti null
+async function pazienteDaToken(req: Request): Promise<string | null> {
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!token || token.startsWith("sb_")) return null;
+  const { data, error } = await db.auth.getUser(token);
+  if (error || !data?.user) return null;
+  const { data: paz } = await db.from("pazienti").select("id").eq("id", data.user.id).maybeSingle();
+  return paz?.id ?? null;
 }
 
 // ---------------------------------------------------------------------
@@ -309,8 +321,9 @@ async function prenotaOnline(req: Request) {
   if ((count ?? 0) >= 5) throw new HttpError(429, "Troppi tentativi, riprova tra qualche minuto");
 
   const quota = await quotaCents();
+  const paziente_id = await pazienteDaToken(req);
   const { data: pren, error } = await db.from("prenotazioni").insert({
-    canale: "online", medico_id, prestazione_id,
+    canale: "online", medico_id, prestazione_id, paziente_id,
     paziente_nome: paziente.nome, paziente_cognome: paziente.cognome,
     paziente_codice_fiscale: paziente.codice_fiscale, paziente_data_nascita: paziente.data_nascita,
     paziente_telefono: paziente.telefono, paziente_email: paziente.email, note,
@@ -623,7 +636,11 @@ async function recuperoPassword(req: Request) {
   const email = String(body.email ?? "").trim().toLowerCase();
   const rispostaNeutra = json(req, { ok: true });   // non rivela se l'email esiste
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return rispostaNeutra;
-  const { data: prof } = await db.from("profili").select("id, nome, attivo").eq("email", email).maybeSingle();
+  let { data: prof } = await db.from("profili").select("id, nome, attivo").eq("email", email).maybeSingle();
+  if (!prof) {
+    const { data: paz } = await db.from("pazienti").select("id, nome").eq("email", email).maybeSingle();
+    if (paz) prof = { ...paz, attivo: true };
+  }
   if (!prof || !prof.attivo) return rispostaNeutra;
 
   const unOraFa = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -638,6 +655,103 @@ async function recuperoPassword(req: Request) {
     <p style="color:#64748b;font-size:13px">Se non sei stato tu, ignora questa email: la password resta quella di prima.</p>`));
   await registra(prof.id, "recupero_password", null);
   return rispostaNeutra;
+}
+
+// ---------------------------------------------------------------------
+// Account dei pazienti
+// ---------------------------------------------------------------------
+const pulsanteEmail = (link: string, testo: string) =>
+  `<p><a href="${esc(link)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">${esc(testo)}</a></p>`;
+
+async function emailGiaRegistrato(email: string) {
+  await inviaEmail(email, "Hai già un account Click Dottore", layoutEmail("Hai già un account", `
+    <p>Qualcuno (probabilmente tu) ha provato a registrarsi su Click Dottore con questo indirizzo email, ma esiste già un account collegato.</p>
+    <p>Puoi accedere con la tua password. Se non la ricordi, dalla pagina di accesso scegli "Password dimenticata?".</p>
+    ${pulsanteEmail(`${SITE}/accedi.html`, "Vai all'accesso")}
+    <p style="color:#64748b;font-size:13px">Se non sei stato tu, ignora questa email: il tuo account non è stato modificato.</p>`));
+}
+
+async function registrati(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  if (body.sito) throw new HttpError(400, "Richiesta non valida");   // campo trappola anti-bot
+  const dati = validaPaziente(body);
+  if (body.consenso_privacy !== true) throw new HttpError(400, "Serve l'accettazione dell'informativa privacy e dei termini");
+  const email = dati.email;
+  const rispostaNeutra = json(req, { ok: true });   // non rivela se l'email è già registrata
+
+  // limiti anti-abuso: 3 richieste all'ora per email, 60 all'ora in totale
+  const unOraFa = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count: perEmail } = await db.from("registro").select("id", { count: "exact", head: true })
+    .eq("azione", "registrazione").eq("dettagli->>email", email).gte("quando", unOraFa);
+  if ((perEmail ?? 0) >= 3) throw new HttpError(429, "Troppi tentativi con questa email, riprova tra un'ora");
+  const { count: totali } = await db.from("registro").select("id", { count: "exact", head: true })
+    .eq("azione", "registrazione").gte("quando", unOraFa);
+  if ((totali ?? 0) >= 60) throw new HttpError(429, "Troppe registrazioni in questo momento, riprova più tardi");
+  await registra(null, "registrazione", null, { email });
+
+  // email già usata dal personale o da un paziente con account attivo
+  const { data: staff } = await db.from("profili").select("id").eq("email", email).maybeSingle();
+  if (staff) { await emailGiaRegistrato(email); return rispostaNeutra; }
+  const { data: esistente } = await db.from("pazienti").select("id").eq("email", email).maybeSingle();
+
+  let link: string;
+  let userId: string;
+  if (esistente) {
+    const { data: u } = await db.auth.admin.getUserById(esistente.id);
+    if (u?.user?.email_confirmed_at) { await emailGiaRegistrato(email); return rispostaNeutra; }
+    // account mai confermato: rimando un nuovo link (la password si sceglie solo dal link)
+    ({ link } = await linkAccesso("recovery", email));
+    userId = esistente.id;
+  } else {
+    // la password si sceglie dopo aver aperto il link ricevuto per email:
+    // così nessuno può creare l'account di un altro con una password che conosce
+    const { data: gen, error } = await db.auth.admin.generateLink({
+      type: "invite", email,
+      options: { redirectTo: `${SITE}/imposta-password.html`, data: { tipo: "paziente" } },
+    });
+    if (error || !gen?.properties?.action_link || !gen.user) {
+      if (error && /already|registered|exists/i.test(error.message)) { await emailGiaRegistrato(email); return rispostaNeutra; }
+      console.error("Registrazione non riuscita", error);
+      throw new HttpError(500, "Registrazione non riuscita, riprova tra poco");
+    }
+    link = gen.properties.action_link;
+    userId = gen.user.id;
+  }
+
+  const ora = new Date().toISOString();
+  const { error: errPaz } = await db.from("pazienti").upsert({
+    id: userId, nome: dati.nome, cognome: dati.cognome, codice_fiscale: dati.codice_fiscale,
+    data_nascita: dati.data_nascita, telefono: dati.telefono, email,
+    consenso_privacy_il: ora, aggiornato_il: ora,
+  });
+  if (errPaz) {
+    console.error(errPaz);
+    if (!esistente) await db.auth.admin.deleteUser(userId);
+    throw new HttpError(500, "Registrazione non riuscita, riprova tra poco");
+  }
+
+  await inviaEmail(email, "Attiva il tuo account Click Dottore", layoutEmail("Attiva il tuo account", `
+    <p>Ciao ${esc(dati.nome)},<br>grazie per esserti registrato su Click Dottore.</p>
+    <p>Per attivare l'account conferma il tuo indirizzo email e scegli la password con il pulsante qui sotto. Il link vale 24 ore e si può usare una sola volta.</p>
+    ${pulsanteEmail(link, "Conferma e scegli la password")}
+    <p>Dopo l'attivazione potrai prenotare le visite con i tuoi dati già compilati e ritrovare tutte le tue prenotazioni nella tua area personale.</p>
+    <p style="color:#64748b;font-size:13px">Se non hai chiesto tu la registrazione, ignora questa email: l'account non verrà attivato.</p>`));
+  return rispostaNeutra;
+}
+
+async function aggiornaProfilo(req: Request) {
+  const id = await pazienteDaToken(req);
+  if (!id) throw new HttpError(401, "Accedi di nuovo per modificare i tuoi dati");
+  const body = await req.json().catch(() => ({}));
+  const { data: attuale } = await db.from("pazienti").select("email").eq("id", id).single();
+  const dati = validaPaziente({ ...body, email: attuale!.email });   // l'email non si cambia da qui
+  const { error } = await db.from("pazienti").update({
+    nome: dati.nome, cognome: dati.cognome, codice_fiscale: dati.codice_fiscale,
+    data_nascita: dati.data_nascita, telefono: dati.telefono, aggiornato_il: new Date().toISOString(),
+  }).eq("id", id);
+  if (error) { console.error(error); throw new HttpError(500, "Salvataggio non riuscito"); }
+  await registra(id, "aggiorna_profilo", null);
+  return json(req, { ok: true });
 }
 
 // ---------------------------------------------------------------------
@@ -656,6 +770,8 @@ Deno.serve(async (req) => {
       case "aggiorna-prenotazione": return await aggiornaPrenotazione(req);
       case "admin": return await admin(req);
       case "recupero-password": return await recuperoPassword(req);
+      case "registrati": return await registrati(req);
+      case "aggiorna-profilo": return await aggiornaProfilo(req);
       default: throw new HttpError(404, "Percorso sconosciuto");
     }
   } catch (e) {
