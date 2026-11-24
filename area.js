@@ -1,19 +1,26 @@
 // Click Dottore - area riservata (amministratore, operatori degli hub, medici)
 import {
-    supabase, api, esc, euro, dataOra, data, quotaCents, badgeStato, STATI,
-    htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, classeCampo,
+    supabase, api, esc, euro, dataOra, data, quando, durata, quotaCents, badgeStato,
+    htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, classeCampo, slotLiberi, selettoreSlot,
 } from './app.js';
 
 const $ = (id) => document.getElementById(id);
 const RUOLI = { admin: 'Amministratore', operatore: 'Operatore', medico: 'Medico' };
-const ATTIVE = ['pagata', 'presa_in_carico', 'visita_fissata'];
+const ATTIVE = ['richiesta', 'da_pagare', 'confermata'];
+const CHIUSE = ['completata', 'annullata', 'rimborsata', 'rifiutata', 'scaduta'];
+const GIORNI = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+const METODI = { pos: 'POS / carta', contanti: 'contanti', altro: 'altro', stripe: 'carta online', bollettino: 'bollettino online' };
 
 const st = {
     io: null, scheda: null, quota: null,
     prenotazioni: [], filtro: 'attive', cerca: '',
     medici: [], prestazioni: [], hub: [], profili: [],
-    nuova: { medicoId: null, cercaMedico: '', hubId: null, esito: null },
+    nuova: { medicoId: null, cercaMedico: '', hubId: null, prestazioneId: null, slot: null, esito: null },
     pannelloId: null,
+    medicoGestito: null,      // medico di cui si modificano orari e tariffe (il proprio, o scelto dall'admin)
+    orari: [], chiusure: [],
+    impostazioni: {}, conti: [], regolazioni: [],
+    daConfermare: 0,
 };
 
 const btnPrimario = 'px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60';
@@ -51,6 +58,7 @@ async function avvia() {
     if (!profilo || !profilo.attivo) { $('bloccato').hidden = false; return; }
     st.io = profilo;
     st.quota = await quotaCents();
+    st.medicoGestito = profilo.medico_id || null;
 
     const dove = profilo.ruolo === 'admin' ? 'Click Dottore'
         : profilo.hub ? `${profilo.hub.nome} · codice hub ${profilo.hub.codice}`
@@ -58,23 +66,71 @@ async function avvia() {
     $('sottotitolo').textContent = `${RUOLI[profilo.ruolo]}${dove ? ' · ' + dove : ''}`;
     $('app').hidden = false;
 
-    if (profilo.ruolo === 'admin') {
-        await Promise.all([caricaHub(), caricaMedici(), caricaProfili()]);
-    } else {
-        await caricaMedici();
+    // avviso delle richieste da confermare (per il medico), sopra le schede
+    const banner = document.createElement('div');
+    banner.id = 'avviso-richieste';
+    banner.hidden = true;
+    banner.className = 'mb-4';
+    $('schede').before(banner);
+
+    if (profilo.ruolo === 'admin') await Promise.all([caricaHub(), caricaMedici(), caricaProfili()]);
+    else await caricaMedici();
+    if (profilo.medico_id) {
+        await contaRichieste();
+        setInterval(controllaNuoveRichieste, 60000);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) controllaNuoveRichieste(); });
     }
+    if (st.daConfermare) st.filtro = 'da_confermare';
     vai(profilo.ruolo === 'operatore' ? 'nuova' : 'prenotazioni');
 }
 
+// ---------------------------------------------------------------------
+// Avviso delle nuove richieste per il medico
+// ---------------------------------------------------------------------
+async function contaRichieste() {
+    if (!st.io?.medico_id) return 0;
+    const { count } = await supabase.from('prenotazioni').select('id', { count: 'exact', head: true })
+        .eq('medico_id', st.io.medico_id).eq('stato', 'richiesta').gt('scadenza', new Date().toISOString());
+    st.daConfermare = count || 0;
+    disegnaAvvisoRichieste();
+    return st.daConfermare;
+}
+
+function disegnaAvvisoRichieste() {
+    const el = $('avviso-richieste');
+    if (!el) return;
+    const n = st.daConfermare;
+    document.title = `${n ? `(${n}) ` : ''}Area riservata – Click Dottore`;
+    if (!n) { el.hidden = true; if (st.scheda) schede(); return; }
+    el.hidden = false;
+    el.innerHTML = `
+        <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="text-sm text-amber-900"><i class="fa-solid fa-bell mr-2"></i><strong>${n === 1 ? 'Hai 1 richiesta di prenotazione' : `Hai ${n} richieste di prenotazione`}</strong> da confermare o rifiutare.</div>
+            <button type="button" data-vedi-richieste class="shrink-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-xl transition">Vedi le richieste</button>
+        </div>`;
+    if (st.scheda) schede();
+}
+
+async function controllaNuoveRichieste() {
+    const prima = st.daConfermare;
+    await contaRichieste();
+    if (st.daConfermare !== prima && st.scheda === 'prenotazioni' && $('pannello').hidden) {
+        await caricaPrenotazioni();
+        disegnaPrenotazioni();
+    }
+}
+
 function schede() {
-    const r = st.io.ruolo;
+    const io = st.io, r = io.ruolo;
     const elenco = [['prenotazioni', 'Prenotazioni', 'fa-list-check']];
-    if (r === 'admin' || st.io.hub_id) elenco.push(['nuova', 'Nuova prenotazione', 'fa-plus']);
+    if (r === 'admin' || io.hub_id) elenco.push(['nuova', 'Nuova prenotazione', 'fa-plus']);
+    if (r === 'admin' || io.medico_id) elenco.push(['orari', 'Orari', 'fa-clock'], ['tariffe', 'Prestazioni e tariffe', 'fa-tags']);
+    if (r === 'admin' || io.hub_id) elenco.push(['conti', r === 'admin' ? 'Conti hub' : 'Conti', 'fa-scale-balanced']);
     if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['utenze', 'Utenze', 'fa-users'], ['impostazioni', 'Impostazioni', 'fa-gear']);
-    if (r === 'operatore') elenco.reverse();
+    if (r === 'operatore') elenco.unshift(elenco.splice(1, 1)[0]);
     $('schede').innerHTML = elenco.map(([id, testo, icona]) => `
         <button type="button" data-scheda="${id}" class="shrink-0 px-4 py-2 rounded-xl text-sm font-medium border transition ${st.scheda === id ? 'bg-skybrand-500 text-white border-transparent' : 'bg-white border-slate-200 text-slate-700 hover:border-skybrand-300'}">
-            <i class="fa-solid ${icona} mr-1.5"></i>${testo}</button>`).join('');
+            <i class="fa-solid ${icona} mr-1.5"></i>${testo}${id === 'prenotazioni' && st.daConfermare ? ` <span class="ml-1 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-xs font-bold bg-amber-500 text-white">${st.daConfermare}</span>` : ''}</button>`).join('');
 }
 
 async function vai(scheda) {
@@ -86,10 +142,13 @@ async function vai(scheda) {
     try {
         if (scheda === 'prenotazioni') { await caricaPrenotazioni(); disegnaPrenotazioni(); }
         if (scheda === 'nuova') disegnaNuova();
+        if (scheda === 'orari') { await caricaOrari(); disegnaOrari(); }
+        if (scheda === 'tariffe') { await caricaMedici(); disegnaTariffe(); }
+        if (scheda === 'conti') { await caricaConti(); disegnaConti(); }
         if (scheda === 'medici') { await caricaMedici(); disegnaMedici(); }
         if (scheda === 'hub') { await caricaHub(); disegnaHub(); }
         if (scheda === 'utenze') { await Promise.all([caricaProfili(), caricaHub(), caricaMedici()]); disegnaUtenze(); }
-        if (scheda === 'impostazioni') disegnaImpostazioni();
+        if (scheda === 'impostazioni') { await caricaImpostazioni(); disegnaImpostazioni(); }
     } catch (err) {
         v.innerHTML = '';
         avviso(err.message || 'Caricamento non riuscito');
@@ -101,10 +160,16 @@ async function vai(scheda) {
 // ---------------------------------------------------------------------
 async function caricaPrenotazioni() {
     const { data: righe, error } = await supabase.from('prenotazioni')
-        .select('*, medico:medici(nome, cognome, specializzazione, citta, indirizzo), prestazione:prestazioni(nome), hub:hub(nome, codice)')
+        .select('*, medico:medici(nome, cognome, specializzazione, citta, indirizzo), prestazione:prestazioni(nome, durata_minuti), hub:hub(nome, codice)')
         .order('creata_il', { ascending: false }).limit(500);
     if (error) throw new Error('Impossibile caricare le prenotazioni');
-    st.prenotazioni = righe || [];
+    // le richieste scadute ma non ancora aggiornate dal server si mostrano già come scadute
+    const ora = Date.now();
+    st.prenotazioni = (righe || []).map((p) => (['richiesta', 'da_pagare'].includes(p.stato) && p.scadenza && new Date(p.scadenza).getTime() < ora ? { ...p, stato: 'scaduta' } : p));
+    if (st.io.medico_id) {
+        st.daConfermare = st.prenotazioni.filter((p) => p.stato === 'richiesta' && p.medico_id === st.io.medico_id).length;
+        disegnaAvvisoRichieste();
+    }
 }
 async function caricaMedici() {
     const [{ data: m }, { data: p }] = await Promise.all([
@@ -112,6 +177,7 @@ async function caricaMedici() {
         supabase.from('prestazioni').select('*').order('nome'),
     ]);
     st.medici = m || []; st.prestazioni = p || [];
+    if (!st.medicoGestito && st.io.ruolo === 'admin' && st.medici.length) st.medicoGestito = st.medici[0].id;
 }
 async function caricaHub() {
     const { data: h } = await supabase.from('hub').select('*').order('nome');
@@ -121,6 +187,35 @@ async function caricaProfili() {
     const { data: p } = await supabase.from('profili').select('*, hub:hub(nome, codice), medico:medici(nome, cognome)').order('creato_il', { ascending: false });
     st.profili = p || [];
 }
+async function caricaOrari() {
+    if (!st.medici.length) await caricaMedici();
+    if (!st.medicoGestito) { st.orari = []; st.chiusure = []; return; }
+    const [{ data: o }, { data: c }] = await Promise.all([
+        supabase.from('disponibilita').select('*').eq('medico_id', st.medicoGestito).order('giorno_settimana').order('ora_inizio'),
+        supabase.from('chiusure').select('*').eq('medico_id', st.medicoGestito).gte('al', new Date().toISOString().slice(0, 10)).order('dal'),
+    ]);
+    st.orari = (o || []).map((f) => ({ giorno: f.giorno_settimana, inizio: f.ora_inizio.slice(0, 5), fine: f.ora_fine.slice(0, 5) }));
+    st.chiusure = c || [];
+}
+async function caricaImpostazioni() {
+    const { data: righe } = await supabase.from('impostazioni').select('chiave, valore');
+    st.impostazioni = Object.fromEntries((righe || []).map((r) => [r.chiave, r.valore]));
+}
+async function caricaConti() {
+    await caricaImpostazioni();
+    const [{ data: c }, { data: r }] = await Promise.all([
+        supabase.from('conti_hub').select('*').order('nome'),
+        supabase.from('regolazioni').select('*, hub:hub(nome)').order('data', { ascending: false }).limit(100),
+    ]);
+    st.conti = c || []; st.regolazioni = r || [];
+}
+
+// Selettore del medico per l'amministratore (orari e tariffe)
+function sceltaMedico() {
+    if (st.io.ruolo !== 'admin') return '';
+    return `<div class="${card} mb-4"><label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Medico</span>
+        <select id="medico-gestito" class="${classeCampo}">${st.medici.map((m) => `<option value="${m.id}" ${m.id === st.medicoGestito ? 'selected' : ''}>Dott. ${esc(m.cognome)} ${esc(m.nome)} · ${esc(m.specializzazione)}</option>`).join('')}</select></label></div>`;
+}
 
 // ---------------------------------------------------------------------
 // Prenotazioni
@@ -128,23 +223,26 @@ async function caricaProfili() {
 function prenotazioniFiltrate() {
     const q = st.cerca.trim().toLowerCase();
     return st.prenotazioni.filter((p) => {
+        if (st.filtro === 'da_confermare' && p.stato !== 'richiesta') return false;
         if (st.filtro === 'attive' && !ATTIVE.includes(p.stato)) return false;
-        if (st.filtro === 'da_gestire' && p.stato !== 'pagata') return false;
-        if (st.filtro === 'chiuse' && !['completata', 'annullata', 'rimborsata'].includes(p.stato)) return false;
-        if (st.filtro === 'tutte' && ['in_attesa_pagamento', 'scaduta'].includes(p.stato) && st.io.ruolo !== 'admin') return false;
+        if (st.filtro === 'chiuse' && !CHIUSE.includes(p.stato)) return false;
         if (!q) return true;
         return [p.codice, p.paziente_nome, p.paziente_cognome, p.paziente_codice_fiscale, p.medico?.cognome]
             .some((x) => String(x || '').toLowerCase().includes(q));
+    }).sort((a, b) => {
+        // le attive in ordine di visita, le altre dalla più recente
+        if (st.filtro !== 'chiuse' && st.filtro !== 'tutte') return new Date(a.visita_il || 0) - new Date(b.visita_il || 0);
+        return 0;
     });
 }
 
 function disegnaPrenotazioni() {
-    const filtri = [['attive', 'Attive'], ['da_gestire', 'Da prendere in carico'], ['chiuse', 'Chiuse'], ['tutte', 'Tutte']];
-    const daGestire = st.prenotazioni.filter((p) => p.stato === 'pagata').length;
+    const filtri = [['da_confermare', 'Da confermare'], ['attive', 'Attive'], ['chiuse', 'Chiuse'], ['tutte', 'Tutte']];
+    const nRichieste = st.prenotazioni.filter((p) => p.stato === 'richiesta').length;
     $('vista').innerHTML = `
         <div class="flex flex-col md:flex-row md:items-center gap-3 mb-4">
             <div class="flex gap-2 overflow-x-auto">${filtri.map(([id, t]) => `
-                <button type="button" data-filtro="${id}" class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${st.filtro === id ? 'bg-slate-900 text-white border-transparent' : 'bg-white border-slate-200 text-slate-600'}">${t}${id === 'da_gestire' && daGestire ? ` (${daGestire})` : ''}</button>`).join('')}
+                <button type="button" data-filtro="${id}" class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${st.filtro === id ? 'bg-slate-900 text-white border-transparent' : 'bg-white border-slate-200 text-slate-600'}">${t}${id === 'da_confermare' && nRichieste ? ` (${nRichieste})` : ''}</button>`).join('')}
             </div>
             <input id="cerca-prenotazioni" type="search" value="${esc(st.cerca)}" placeholder="Cerca per codice, paziente o codice fiscale" class="${classeCampo} md:max-w-sm md:ml-auto">
         </div>
@@ -154,19 +252,27 @@ function disegnaPrenotazioni() {
 
 function disegnaElencoPrenotazioni() {
     const righe = prenotazioniFiltrate();
+    const comeMedico = (p) => st.io.ruolo === 'admin' || (st.io.medico_id && st.io.medico_id === p.medico_id);
     $('elenco-prenotazioni').innerHTML = righe.length ? righe.map((p) => `
-        <button type="button" data-apri="${p.id}" class="w-full text-left ${card} !p-4 hover:border-skybrand-300 transition flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-            <div class="sm:w-56 shrink-0">
-                <div class="font-mono font-bold text-slate-900 text-sm">${esc(p.codice || 'in attesa di pagamento')}</div>
-                <div class="text-xs text-slate-500">${dataOra(p.creata_il)} · ${p.canale === 'online' ? 'online' : esc(p.hub?.nome || 'hub')}</div>
-            </div>
-            <div class="flex-1 min-w-0">
-                <div class="font-semibold text-slate-800 truncate">${esc(p.paziente_cognome)} ${esc(p.paziente_nome)}</div>
-                <div class="text-xs text-slate-500 truncate">${esc(p.prestazione?.nome || '')} · Dott. ${esc(p.medico?.cognome || '')}${p.visita_il ? ` · visita ${dataOra(p.visita_il)}` : ''}</div>
-            </div>
-            <div class="shrink-0">${badgeStato(p.stato)}</div>
-        </button>`).join('')
-        : `<div class="${card} text-center text-sm text-slate-500 py-10">Nessuna prenotazione in questo elenco.</div>`;
+        <div class="${card} !p-4 ${p.stato === 'richiesta' ? 'border-amber-300' : ''}">
+            <button type="button" data-apri="${p.id}" class="w-full text-left flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <div class="sm:w-60 shrink-0">
+                    <div class="font-semibold text-slate-900 text-sm"><i class="fa-regular fa-calendar mr-1.5 text-slate-400"></i>${p.visita_il ? esc(dataOra(p.visita_il)) : 'orario da definire'}</div>
+                    <div class="text-xs text-slate-500 font-mono">${esc(p.codice || '')}</div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-slate-800 truncate">${esc(p.paziente_cognome)} ${esc(p.paziente_nome)}</div>
+                    <div class="text-xs text-slate-500 truncate">${esc(p.prestazione?.nome || '')} · Dott. ${esc(p.medico?.cognome || '')} · ${p.canale === 'online' ? 'online' : esc(p.hub?.nome || 'hub')}</div>
+                </div>
+                <div class="shrink-0 text-right">${badgeStato(p.stato)}${p.stato === 'richiesta' && p.scadenza ? `<div class="text-xs text-slate-500 mt-1">rispondi entro ${esc(dataOra(p.scadenza))}</div>` : ''}</div>
+            </button>
+            ${p.stato === 'richiesta' && comeMedico(p) ? `
+                <div class="flex gap-2 mt-3 pt-3 border-t border-slate-100">
+                    <button type="button" data-rapida="conferma" data-id="${p.id}" class="${btnPrimario} !py-2"><i class="fa-solid fa-check mr-1"></i> Conferma</button>
+                    <button type="button" data-apri="${p.id}" class="${btnSecondario} !py-2">Dettagli o rifiuta</button>
+                </div>` : ''}
+        </div>`).join('')
+        : `<div class="${card} text-center text-sm text-slate-500 py-10">${st.filtro === 'da_confermare' ? 'Nessuna richiesta da confermare.' : 'Nessuna prenotazione in questo elenco.'}</div>`;
 }
 
 function apriPannello(id) {
@@ -177,15 +283,21 @@ function apriPannello(id) {
     const comeMedico = io.ruolo === 'admin' || (io.medico_id && io.medico_id === p.medico_id);
     const comeHub = io.ruolo === 'admin' || (io.hub_id && io.hub_id === p.hub_id);
     const riga = (k, v) => v ? `<div><dt class="text-xs text-slate-500">${k}</dt><dd class="font-medium text-slate-900 break-words">${v}</dd></div>` : '';
-    const chiusa = ['annullata', 'rimborsata', 'completata', 'in_attesa_pagamento', 'scaduta'].includes(p.stato);
-    const valoreVisita = p.visita_il ? new Date(new Date(p.visita_il).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+    const attiva = ATTIVE.includes(p.stato);
+    const quotaTesto = p.pagata_il
+        ? `${euro(p.quota_cents)} pagata il ${dataOra(p.pagata_il)}${p.metodo_pagamento ? ` (${esc(METODI[p.metodo_pagamento] || p.metodo_pagamento)})` : ''}`
+        : `${euro(p.quota_cents)} da pagare`;
+    const ripartizione = p.canale === 'hub' ? `hub ${euro(p.quota_hub_cents)} · Click Dottore ${euro(p.quota_cents - p.quota_hub_cents)}` : '';
+    const visitaPassata = p.visita_il && new Date(p.visita_il).getTime() < Date.now();
 
     $('pannello-corpo').innerHTML = `
         <div class="flex items-start justify-between gap-3">
-            <div><div class="font-mono text-lg font-bold text-slate-900">${esc(p.codice || 'in attesa di pagamento')}</div>
-            <div class="text-xs text-slate-500">Creata il ${dataOra(p.creata_il)}</div></div>
+            <div><div class="font-mono text-lg font-bold text-slate-900">${esc(p.codice || '')}</div>
+            <div class="text-xs text-slate-500">Ricevuta il ${dataOra(p.creata_il)}</div></div>
             ${badgeStato(p.stato)}
         </div>
+        <div class="rounded-xl bg-skybrand-50 border border-skybrand-200 p-3 text-sm text-slate-800"><i class="fa-regular fa-calendar mr-1.5"></i><strong>${p.visita_il ? esc(quando(p.visita_il)) : 'Orario da definire'}</strong>${p.prestazione?.durata_minuti ? ` · ${durata(p.prestazione.durata_minuti)}` : ''}
+            ${['richiesta', 'da_pagare'].includes(p.stato) && p.scadenza ? `<div class="text-xs text-slate-500 mt-1">${p.stato === 'richiesta' ? 'Il medico deve rispondere' : 'Il paziente deve pagare'} entro ${esc(dataOra(p.scadenza))}</div>` : ''}</div>
         <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             ${riga('Paziente', `${esc(p.paziente_nome)} ${esc(p.paziente_cognome)}`)}
             ${riga('Codice fiscale', esc(p.paziente_codice_fiscale))}
@@ -195,30 +307,42 @@ function apriPannello(id) {
             ${riga('Prestazione', esc(p.prestazione?.nome))}
             ${riga('Medico', `Dott. ${esc(p.medico?.nome)} ${esc(p.medico?.cognome)}`)}
             ${riga('Canale', p.canale === 'online' ? 'Online dal paziente' : `Hub: ${esc(p.hub?.nome)} (${esc(p.hub?.codice)})`)}
-            ${riga('Quota', `${euro(p.quota_cents)} · incassata da ${p.incassata_da === 'hub' ? 'hub' : 'Click Dottore'}${p.metodo_pagamento ? ` (${esc(p.metodo_pagamento)})` : ''}`)}
-            ${riga('Visita', p.visita_il ? dataOra(p.visita_il) : '')}
+            ${riga('Quota', quotaTesto)}
+            ${riga('Ripartizione', ripartizione)}
         </dl>
         ${p.note ? `<div class="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm"><div class="text-xs text-slate-500 mb-1">Note del paziente</div>${esc(p.note)}</div>` : ''}
-        ${p.nota_medico ? `<div class="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm"><div class="text-xs text-slate-500 mb-1">Nota del medico</div>${esc(p.nota_medico)}</div>` : ''}
+        ${p.motivo_rifiuto ? `<div class="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm"><div class="text-xs text-slate-500 mb-1">Motivo del rifiuto</div>${esc(p.motivo_rifiuto)}</div>` : ''}
+        ${p.nota_medico ? `<div class="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm"><div class="text-xs text-slate-500 mb-1">Nota</div>${esc(p.nota_medico)}</div>` : ''}
         <div id="msg-pannello" hidden></div>
         <div class="space-y-4 no-print">
-            ${comeMedico && p.stato === 'pagata' ? `<button type="button" data-azione="prendi_in_carico" class="${btnPrimario} w-full">Prendi in carico</button>` : ''}
-            ${comeMedico && ATTIVE.includes(p.stato) ? `
-                <form data-form-visita class="rounded-xl border border-slate-200 p-4 space-y-3">
-                    <div class="text-sm font-semibold text-slate-800">${p.visita_il ? 'Sposta la visita' : 'Fissa data e ora della visita'}</div>
-                    <input type="datetime-local" name="visita_il" required value="${valoreVisita}" class="${classeCampo}">
-                    <textarea name="nota" rows="2" maxlength="500" placeholder="Nota per il paziente (facoltativa)" class="${classeCampo}"></textarea>
-                    <button type="submit" class="${btnPrimario} w-full">Conferma e avvisa il paziente</button>
-                    <p class="text-xs text-slate-500">Il paziente riceve un'email con data, ora e indirizzo.</p>
-                </form>` : ''}
-            ${comeMedico && p.stato === 'visita_fissata' ? `<button type="button" data-azione="completa" class="${btnSecondario} w-full">Segna la visita come svolta</button>` : ''}
-            ${(comeMedico || comeHub) && !chiusa ? `
+            ${comeMedico && p.stato === 'richiesta' ? `
+                <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                    <div class="text-sm font-semibold text-amber-900">Richiesta da confermare</div>
+                    <p class="text-xs text-amber-900/80">${p.canale === 'online' ? 'Se confermi, il paziente riceve un\'email e ha 24 ore per pagare la quota: poi la visita è definitiva.' : 'Se confermi, la visita è definitiva e l\'hub viene avvisato.'}</p>
+                    <button type="button" data-azione="conferma" class="${btnPrimario} w-full"><i class="fa-solid fa-check mr-1"></i> Conferma la visita</button>
+                    <textarea data-motivo-rifiuto rows="2" maxlength="500" placeholder="Motivo del rifiuto (facoltativo, viene comunicato)" class="${classeCampo}"></textarea>
+                    <button type="button" data-azione="rifiuta" class="${btnPericolo} w-full">Rifiuta la richiesta</button>
+                </div>` : ''}
+            ${comeHub && p.canale === 'hub' && !p.pagata_il && ['richiesta', 'confermata'].includes(p.stato) ? `
+                <div class="rounded-xl border border-slate-200 p-4 space-y-3">
+                    <div class="text-sm font-semibold text-slate-800">Quota di prenotazione (${euro(p.quota_cents)})</div>
+                    <div class="flex gap-2">
+                        <select data-metodo class="${classeCampo}"><option value="">Incassata allo sportello con...</option><option value="pos">POS / carta</option><option value="contanti">Contanti</option><option value="altro">Altro</option></select>
+                        <button type="button" data-azione="registra_incasso" class="${btnSecondario} shrink-0">Registra</button>
+                    </div>
+                    ${p.stato === 'confermata'
+                        ? `<button type="button" data-bollettino class="${btnSecondario} w-full"><i class="fa-solid fa-qrcode mr-1"></i> Stampa il bollettino da pagare online</button>
+                           <p class="text-xs text-slate-500">Il paziente inquadra il QR code e paga con carta quando vuole.</p>`
+                        : '<p class="text-xs text-slate-500">Il bollettino da pagare online si stampa dopo la conferma del medico.</p>'}
+                </div>` : ''}
+            ${comeMedico && p.stato === 'confermata' && visitaPassata ? `<button type="button" data-azione="completa" class="${btnSecondario} w-full">Segna la visita come svolta</button>` : ''}
+            ${(comeMedico || comeHub) && attiva ? `
                 <div class="rounded-xl border border-red-200 p-4 space-y-3">
                     <div class="text-sm font-semibold text-red-700">Annulla la prenotazione</div>
                     <textarea data-motivo rows="2" maxlength="500" placeholder="Motivo (viene comunicato al paziente)" class="${classeCampo}"></textarea>
-                    <button type="button" data-azione="annulla" class="${btnPericolo} w-full">${p.canale === 'online' ? 'Annulla e rimborsa la quota' : 'Annulla la prenotazione'}</button>
+                    <button type="button" data-azione="annulla" class="${btnPericolo} w-full">${p.pagata_il && p.incassata_da === 'click_dottore' ? 'Annulla e rimborsa la quota' : 'Annulla la prenotazione'}</button>
                 </div>` : ''}
-            ${comeHub && p.canale === 'hub' && p.stato === 'annullata' ? `<button type="button" data-azione="segna_rimborsata" class="${btnSecondario} w-full">Segna la quota come rimborsata al paziente</button>` : ''}
+            ${comeHub && p.canale === 'hub' && p.stato === 'annullata' && p.incassata_da === 'hub' ? `<button type="button" data-azione="segna_rimborsata" class="${btnSecondario} w-full">Segna la quota come rimborsata al paziente</button>` : ''}
             <button type="button" onclick="window.print()" class="${btnSecondario} w-full"><i class="fa-solid fa-print mr-1"></i> Stampa</button>
         </div>`;
     $('pannello').hidden = false;
@@ -231,40 +355,66 @@ function chiudiPannello() {
     st.pannelloId = null;
 }
 
-async function azionePrenotazione(azione, extra = {}, bottone) {
+async function azionePrenotazione(azione, extra = {}, bottone, id = st.pannelloId) {
     const msg = $('msg-pannello');
-    if (azione === 'annulla' && bottone?.dataset.confermato !== '1') {
+    if (['annulla', 'rifiuta'].includes(azione) && bottone?.dataset.confermato !== '1') {
         bottone.dataset.confermato = '1';
-        bottone.textContent = 'Clicca di nuovo per confermare l\'annullamento';
+        bottone.textContent = azione === 'annulla' ? 'Clicca di nuovo per confermare l\'annullamento' : 'Clicca di nuovo per rifiutare';
         return;
     }
     if (bottone) bottone.disabled = true;
+    const testi = {
+        conferma: 'Visita confermata: il paziente è stato avvisato', rifiuta: 'Richiesta rifiutata', completa: 'Visita segnata come svolta',
+        annulla: 'Prenotazione annullata', registra_incasso: 'Incasso registrato', segna_rimborsata: 'Rimborso registrato',
+    };
     try {
-        await api('aggiorna-prenotazione', { conAccesso: true, dati: { id: st.pannelloId, azione, ...extra } });
+        await api('aggiorna-prenotazione', { conAccesso: true, dati: { id, azione, ...extra } });
         await caricaPrenotazioni();
         disegnaPrenotazioni();
-        apriPannello(st.pannelloId);
-        msg.hidden = false;
-        messaggio(msg, 'Prenotazione aggiornata', 'ok');
+        if (st.pannelloId) {
+            apriPannello(st.pannelloId);
+            $('msg-pannello').hidden = false;
+            messaggio($('msg-pannello'), testi[azione] || 'Prenotazione aggiornata', 'ok');
+        } else {
+            avviso(testi[azione] || 'Prenotazione aggiornata', 'ok');
+        }
     } catch (err) {
-        msg.hidden = false;
-        messaggio(msg, err.message);
+        if (msg && st.pannelloId) { msg.hidden = false; messaggio(msg, err.message); } else avviso(err.message);
         if (bottone) bottone.disabled = false;
     }
+}
+
+async function stampaBollettino(bottone) {
+    const finestra = window.open('', '_blank');   // aperta subito, così il browser non la blocca
+    bottone.disabled = true;
+    try {
+        const { url } = await api('aggiorna-prenotazione', { conAccesso: true, dati: { id: st.pannelloId, azione: 'bollettino' } });
+        if (finestra) finestra.location = `${url}&stampa=1`; else location.href = `${url}&stampa=1`;
+    } catch (err) {
+        if (finestra) finestra.close();
+        $('msg-pannello').hidden = false;
+        messaggio($('msg-pannello'), err.message);
+    }
+    bottone.disabled = false;
 }
 
 // ---------------------------------------------------------------------
 // Nuova prenotazione (hub)
 // ---------------------------------------------------------------------
+function mediciPrenotabili() {
+    return st.medici.filter((m) => m.attivo && st.prestazioni.some((p) => p.medico_id === m.id && p.attivo));
+}
+
 function disegnaNuova() {
     const n = st.nuova;
     if (n.esito) return disegnaEsitoNuova();
     const isAdmin = st.io.ruolo === 'admin';
     const hubAttivi = st.hub.filter((h) => h.attivo);
     if (isAdmin && !n.hubId && hubAttivi.length) n.hubId = hubAttivi[0].id;
-    const medici = st.medici.filter((m) => m.attivo && st.prestazioni.some((p) => p.medico_id === m.id && p.attivo));
+    const medici = mediciPrenotabili();
     const medico = medici.find((m) => m.id === n.medicoId);
     const prest = medico ? st.prestazioni.filter((p) => p.medico_id === medico.id && p.attivo) : [];
+    if (medico && !prest.some((p) => p.id === n.prestazioneId)) { n.prestazioneId = prest.length === 1 ? prest[0].id : null; n.slot = null; }
 
     $('vista').innerHTML = `
         <form id="form-nuova" novalidate class="space-y-4 max-w-3xl">
@@ -275,34 +425,56 @@ function disegnaNuova() {
                 <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">1 · Medico e prestazione</h2>
                 ${medico ? `
                     <div class="flex items-center justify-between gap-3 rounded-xl bg-skybrand-50 border border-skybrand-200 p-3">
-                        <div><div class="font-semibold text-slate-900">Dott. ${esc(medico.nome)} ${esc(medico.cognome)}</div><div class="text-xs text-slate-500">${esc(medico.specializzazione)} · ${esc(medico.citta)}</div></div>
+                        <div><div class="font-semibold text-slate-900">Dott. ${esc(medico.nome)} ${esc(medico.cognome)}</div><div class="text-xs text-slate-500">${esc(medico.specializzazione)} · ${esc(medico.citta)}${medico.telefono ? ` · tel. ${esc(medico.telefono)}` : ''}</div></div>
                         <button type="button" data-cambia-medico class="text-sm text-skybrand-600 font-medium">Cambia</button>
                     </div>
-                    <div class="space-y-2">${prest.map((p, i) => `
-                        <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer"><input type="radio" name="prestazione_id" value="${p.id}" class="mt-1 w-4 h-4" ${prest.length === 1 || i === 0 ? 'checked' : ''}><span><span class="block font-medium text-slate-900">${esc(p.nome)}</span>${p.descrizione ? `<span class="block text-xs text-slate-500">${esc(p.descrizione)}</span>` : ''}</span></label>`).join('')}</div>`
+                    <div class="space-y-2">${prest.map((p) => `
+                        <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer"><input type="radio" name="prestazione_id" value="${p.id}" class="mt-1 w-4 h-4" ${p.id === n.prestazioneId ? 'checked' : ''}><span><span class="block font-medium text-slate-900">${esc(p.nome)}</span>
+                        <span class="block text-xs text-slate-500">${durata(p.durata_minuti)}${p.prezzo_visita_cents != null ? ` · tariffa ${euro(p.prezzo_visita_cents)}` : ''}${p.descrizione ? ` · ${esc(p.descrizione)}` : ''}</span></span></label>`).join('')}</div>`
                 : `
                     <input type="search" id="cerca-medico" value="${esc(n.cercaMedico)}" placeholder="Cerca per cognome, specializzazione o città" class="${classeCampo}">
                     <div id="risultati-medici" class="space-y-2 max-h-80 overflow-y-auto"></div>`}
             </div>
             ${medico ? `
             <div class="${card}">
-                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">2 · Dati del paziente</h2>
+                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">2 · Giorno e ora</h2>
+                <div id="slot-nuova"><p class="text-sm text-slate-500">Scegli prima la prestazione.</p></div>
+            </div>
+            <div class="${card}">
+                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">3 · Dati del paziente</h2>
                 ${htmlCampiPaziente()}
             </div>
             <div class="${card} space-y-3 text-sm text-slate-700">
-                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">3 · Consensi e pagamento</h2>
+                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">4 · Consensi e conferma</h2>
                 <label class="flex items-start gap-3"><input type="checkbox" name="consenso_privacy" class="mt-1 w-4 h-4 shrink-0"><span>Il paziente ha ricevuto l'informativa privacy e accetta i termini del servizio.</span></label>
                 <label class="flex items-start gap-3"><input type="checkbox" name="consenso_dati_sanitari" class="mt-1 w-4 h-4 shrink-0"><span>Il paziente acconsente al trattamento dei suoi dati relativi alla salute per organizzare la visita.</span></label>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Come ha pagato la quota${st.quota ? ` di ${euro(st.quota)}` : ''}?</span>
-                        <select name="metodo_pagamento" class="${classeCampo}"><option value="">Scegli...</option><option value="pos">POS / carta</option><option value="contanti">Contanti</option><option value="altro">Altro</option></select></label>
+                <div class="pt-2 space-y-2">
+                    <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer"><input type="radio" name="modo" value="richiesta" class="mt-1 w-4 h-4" checked>
+                        <span><span class="block font-medium text-slate-900">Invia la richiesta al medico</span><span class="block text-xs text-slate-500">Il medico riceve un'email e conferma o rifiuta dalla sua area riservata.</span></span></label>
+                    <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer"><input type="radio" name="modo" value="confermata" class="mt-1 w-4 h-4">
+                        <span><span class="block font-medium text-slate-900">Ho già sentito il medico per telefono: conferma subito</span><span class="block text-xs text-slate-500">La visita è confermata adesso; il medico e il paziente ricevono la conferma via email.</span></span></label>
                 </div>
-                <label class="flex items-start gap-3"><input type="checkbox" name="pagato" class="mt-1 w-4 h-4 shrink-0"><span>Confermo che la quota è stata incassata dall'hub.</span></label>
+                <p class="text-xs text-slate-500">La quota di ${st.quota ? euro(st.quota) : 'prenotazione'} si incassa allo sportello o con il bollettino online, dal dettaglio della prenotazione.</p>
             </div>
             <div id="msg-nuova" hidden></div>
-            <button type="submit" id="btn-nuova" class="${btnPrimario} px-6 py-3">Registra la prenotazione</button>` : ''}
+            <button type="submit" id="btn-nuova" class="${btnPrimario} px-6 py-3">Registra</button>` : ''}
         </form>`;
     if (!medico) disegnaRisultatiMedici(medici);
+    else if (n.prestazioneId) caricaSlotNuova();
+}
+
+async function caricaSlotNuova() {
+    const el = $('slot-nuova');
+    const id = st.nuova.prestazioneId;
+    if (!el || !id) return;
+    el.innerHTML = '<p class="text-sm text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Carico gli orari liberi...</p>';
+    try {
+        const slots = await slotLiberi(id);
+        if (st.nuova.prestazioneId !== id || !$('slot-nuova')) return;
+        selettoreSlot($('slot-nuova'), slots, (iso) => { st.nuova.slot = iso; }, st.nuova.slot);
+    } catch (err) {
+        el.innerHTML = `<p class="text-sm text-red-700">${esc(err.message)}</p>`;
+    }
 }
 
 function disegnaRisultatiMedici(medici) {
@@ -321,44 +493,46 @@ function disegnaRisultatiMedici(medici) {
 async function inviaNuova(form) {
     const msg = $('msg-nuova');
     const { paziente, note } = leggiPaziente(form);
-    const errori = erroriPaziente(paziente);
-    const prestazione_id = [...form.querySelectorAll('input[name=prestazione_id]')].find((r) => r.checked)?.value;
-    if (!prestazione_id) errori.unshift('Scegli la prestazione');
+    const errori = [];
+    if (!st.nuova.prestazioneId) errori.push('Scegli la prestazione');
+    else if (!st.nuova.slot) errori.push('Scegli giorno e ora della visita');
+    errori.push(...erroriPaziente(paziente));
     if (!form.consenso_privacy.checked || !form.consenso_dati_sanitari.checked) errori.push('Servono entrambi i consensi del paziente');
-    if (!form.metodo_pagamento.value) errori.push('Indica come è stata pagata la quota');
-    if (!form.pagato.checked) errori.push('Conferma che la quota è stata incassata');
     msg.hidden = false;
     if (errori.length) return messaggio(msg, errori);
     msg.hidden = true;
+    const giaConfermata = form.querySelector('input[name=modo]:checked')?.value === 'confermata';
     const btn = $('btn-nuova');
     btn.disabled = true; btn.textContent = 'Registrazione...';
     try {
         const r = await api('prenota-hub', {
             conAccesso: true,
             dati: {
-                medico_id: st.nuova.medicoId, prestazione_id, paziente, note,
-                consenso_privacy: true, consenso_dati_sanitari: true,
-                metodo_pagamento: form.metodo_pagamento.value,
+                prestazione_id: st.nuova.prestazioneId, inizio: st.nuova.slot, paziente, note,
+                consenso_privacy: true, consenso_dati_sanitari: true, gia_confermata: giaConfermata,
                 hub_id: st.io.ruolo === 'admin' ? form.hub_id?.value : undefined,
             },
         });
         const medico = st.medici.find((m) => m.id === st.nuova.medicoId);
-        st.nuova.esito = { codice: r.codice, paziente, medico, prestazione: st.prestazioni.find((p) => p.id === prestazione_id) };
+        st.nuova.esito = { ...r, paziente, medico, prestazione: st.prestazioni.find((p) => p.id === st.nuova.prestazioneId), inizio: st.nuova.slot };
         disegnaEsitoNuova();
     } catch (err) {
         msg.hidden = false;
         messaggio(msg, err.message);
-        btn.disabled = false; btn.textContent = 'Registra la prenotazione';
+        btn.disabled = false; btn.textContent = 'Registra';
+        if (/orario/i.test(err.message)) { st.nuova.slot = null; caricaSlotNuova(); }
     }
 }
 
 function disegnaEsitoNuova() {
     const e = st.nuova.esito;
+    const confermata = e.stato === 'confermata';
     $('vista').innerHTML = `
         <div class="${card} max-w-2xl space-y-5">
             <div class="flex items-center gap-3">
-                <div class="w-11 h-11 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg"><i class="fa-solid fa-check"></i></div>
-                <div><h2 class="text-lg font-bold text-slate-900">Prenotazione registrata</h2><p class="text-sm text-slate-500">Il medico è stato avvisato e il paziente riceve la conferma via email.</p></div>
+                <div class="w-11 h-11 rounded-full ${confermata ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'} flex items-center justify-center text-lg"><i class="fa-solid ${confermata ? 'fa-check' : 'fa-paper-plane'}"></i></div>
+                <div><h2 class="text-lg font-bold text-slate-900">${confermata ? 'Visita confermata' : 'Richiesta inviata al medico'}</h2>
+                <p class="text-sm text-slate-500">${confermata ? 'Medico e paziente ricevono la conferma via email.' : 'Il medico riceve un\'email; quando conferma ti avvisiamo e la trovi tra le prenotazioni attive.'}</p></div>
             </div>
             <div class="rounded-2xl bg-skybrand-50 border border-skybrand-200 p-5 text-center">
                 <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Codice prenotazione</div>
@@ -368,12 +542,231 @@ function disegnaEsitoNuova() {
                 <div><dt class="text-xs text-slate-500">Paziente</dt><dd class="font-medium text-slate-900">${esc(e.paziente.nome)} ${esc(e.paziente.cognome)}</dd></div>
                 <div><dt class="text-xs text-slate-500">Medico</dt><dd class="font-medium text-slate-900">Dott. ${esc(e.medico?.nome)} ${esc(e.medico?.cognome)}</dd></div>
                 <div><dt class="text-xs text-slate-500">Prestazione</dt><dd class="font-medium text-slate-900">${esc(e.prestazione?.nome)}</dd></div>
-                <div><dt class="text-xs text-slate-500">Quota</dt><dd class="font-medium text-slate-900">${st.quota ? euro(st.quota) : ''}</dd></div>
+                <div><dt class="text-xs text-slate-500">Data e ora</dt><dd class="font-medium text-slate-900">${esc(quando(e.inizio))}</dd></div>
+                <div><dt class="text-xs text-slate-500">Quota</dt><dd class="font-medium text-slate-900">${st.quota ? euro(st.quota) : ''} da incassare</dd></div>
             </dl>
             <div class="no-print flex flex-col sm:flex-row gap-3">
+                <button type="button" data-apri-dopo="${e.id}" class="${btnSecondario}">Apri la prenotazione${confermata ? ' (incasso o bollettino)' : ''}</button>
                 <button type="button" onclick="window.print()" class="${btnSecondario}"><i class="fa-solid fa-print mr-1"></i> Stampa per il paziente</button>
                 <button type="button" data-nuova-ancora class="${btnPrimario}">Nuova prenotazione</button>
             </div>
+        </div>`;
+}
+
+// ---------------------------------------------------------------------
+// Orari di disponibilità e chiusure del medico
+// ---------------------------------------------------------------------
+function disegnaOrari() {
+    if (!st.medicoGestito) { $('vista').innerHTML = `<div class="${card} text-sm text-slate-500">Nessun medico da gestire.</div>`; return; }
+    const fascia = (f, i) => `
+        <div class="flex items-center gap-2" data-fascia="${i}">
+            <input type="time" data-campo="inizio" value="${esc(f.inizio)}" step="300" class="${classeCampo} !w-32">
+            <span class="text-slate-400">–</span>
+            <input type="time" data-campo="fine" value="${esc(f.fine)}" step="300" class="${classeCampo} !w-32">
+            <button type="button" data-togli-fascia="${i}" aria-label="Togli la fascia" class="w-9 h-9 shrink-0 rounded-lg border border-slate-200 text-slate-500 hover:text-red-600"><i class="fa-solid fa-xmark"></i></button>
+        </div>`;
+    $('vista').innerHTML = `
+        ${sceltaMedico()}
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <div class="${card} lg:col-span-3 space-y-4">
+                <div>
+                    <h2 class="font-bold text-slate-900">Orari settimanali</h2>
+                    <p class="text-sm text-slate-500">I pazienti e gli hub possono chiedere solo gli orari liberi dentro queste fasce. La lunghezza di ogni appuntamento dipende dalla durata della prestazione.</p>
+                </div>
+                ${GIORNI.map((nome, g) => {
+                    const fasce = st.orari.map((f, i) => [f, i]).filter(([f]) => f.giorno === g + 1);
+                    return `<div class="flex flex-col sm:flex-row sm:items-start gap-2 py-3 border-t border-slate-100">
+                        <div class="sm:w-28 shrink-0 pt-2 text-sm font-semibold text-slate-800">${nome}</div>
+                        <div class="flex-1 space-y-2">
+                            ${fasce.length ? fasce.map(([f, i]) => fascia(f, i)).join('') : '<p class="text-sm text-slate-400 pt-2">Chiuso</p>'}
+                            <button type="button" data-aggiungi-fascia="${g + 1}" class="text-sm text-skybrand-600 font-medium"><i class="fa-solid fa-plus mr-1"></i>Aggiungi fascia</button>
+                        </div>
+                    </div>`;
+                }).join('')}
+                <div id="msg-orari" hidden></div>
+                <button type="button" data-salva-orari class="${btnPrimario}">Salva gli orari</button>
+            </div>
+            <div class="lg:col-span-2 space-y-5">
+                <form data-medico="aggiungi_chiusura" class="${card} space-y-3">
+                    <h2 class="font-bold text-slate-900">Giorni di chiusura</h2>
+                    <p class="text-sm text-slate-500">Ferie, congressi o giorni in cui non ricevi: in quelle date non si possono chiedere visite.</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Dal</span><input name="dal" type="date" required class="${classeCampo}"></label>
+                        <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Al</span><input name="al" type="date" class="${classeCampo}"></label>
+                    </div>
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Motivo (facoltativo)</span><input name="motivo" maxlength="120" class="${classeCampo}" placeholder="Es. ferie"></label>
+                    <button type="submit" class="${btnSecondario} w-full">Aggiungi chiusura</button>
+                </form>
+                <div class="space-y-2">${st.chiusure.length ? st.chiusure.map((c) => `
+                    <div class="${card} !p-3 flex items-center justify-between gap-3 text-sm">
+                        <div><span class="font-medium text-slate-900">${data(c.dal)}${c.al !== c.dal ? ` – ${data(c.al)}` : ''}</span>${c.motivo ? ` <span class="text-slate-500">· ${esc(c.motivo)}</span>` : ''}</div>
+                        <button type="button" data-elimina-chiusura="${c.id}" class="text-red-700 text-sm font-medium">Elimina</button>
+                    </div>`).join('') : '<p class="text-sm text-slate-500">Nessuna chiusura in programma.</p>'}</div>
+            </div>
+        </div>`;
+}
+
+// legge le fasce dai campi (per non perdere le modifiche non salvate)
+function leggiFasce() {
+    document.querySelectorAll('[data-fascia]').forEach((riga) => {
+        const f = st.orari[Number(riga.dataset.fascia)];
+        if (!f) return;
+        f.inizio = riga.querySelector('[data-campo=inizio]').value;
+        f.fine = riga.querySelector('[data-campo=fine]').value;
+    });
+}
+
+async function salvaOrari(bottone) {
+    leggiFasce();
+    const msg = $('msg-orari');
+    const incomplete = st.orari.some((f) => !f.inizio || !f.fine);
+    msg.hidden = false;
+    if (incomplete) return messaggio(msg, 'Completa o togli le fasce senza orario');
+    bottone.disabled = true;
+    try {
+        await api('medico', { conAccesso: true, dati: { azione: 'salva_disponibilita', medico_id: st.medicoGestito, fasce: st.orari } });
+        messaggio(msg, 'Orari salvati: da adesso i pazienti vedono i nuovi orari liberi', 'ok');
+    } catch (err) {
+        messaggio(msg, err.message);
+    }
+    bottone.disabled = false;
+}
+
+// ---------------------------------------------------------------------
+// Prestazioni e tariffe del medico
+// ---------------------------------------------------------------------
+function disegnaTariffe() {
+    const medico = st.medici.find((m) => m.id === st.medicoGestito);
+    if (!medico) { $('vista').innerHTML = `${sceltaMedico()}<div class="${card} text-sm text-slate-500">Nessun medico da gestire.</div>`; return; }
+    const prest = st.prestazioni.filter((p) => p.medico_id === medico.id);
+    const modulo = (p) => `
+        <form data-medico="salva_prestazione" class="${card} space-y-3">
+            ${p ? `<input type="hidden" name="id" value="${p.id}">` : '<h2 class="font-bold text-slate-900">Nuova prestazione</h2>'}
+            <div class="grid grid-cols-1 sm:grid-cols-6 gap-3">
+                <label class="block sm:col-span-6"><span class="block text-xs font-semibold text-slate-600 mb-1">Nome della prestazione</span>
+                    <input name="nome" required maxlength="120" value="${esc(p?.nome || '')}" class="${classeCampo}" placeholder="Es. Visita cardiologica"></label>
+                <label class="block sm:col-span-6"><span class="block text-xs font-semibold text-slate-600 mb-1">Descrizione (facoltativa)</span>
+                    <input name="descrizione" maxlength="300" value="${esc(p?.descrizione || '')}" class="${classeCampo}"></label>
+                <label class="block sm:col-span-2"><span class="block text-xs font-semibold text-slate-600 mb-1">Tariffa della visita (€)</span>
+                    <input name="prezzo_euro" type="number" min="0" step="0.01" value="${p?.prezzo_visita_cents != null ? (p.prezzo_visita_cents / 100).toFixed(2) : ''}" class="${classeCampo}" placeholder="Es. 100"></label>
+                <label class="block sm:col-span-2"><span class="block text-xs font-semibold text-slate-600 mb-1">Durata (minuti)</span>
+                    <input name="durata_minuti" type="number" min="5" max="480" step="5" required value="${p?.durata_minuti || 30}" class="${classeCampo}"></label>
+                <label class="flex items-center gap-2 sm:col-span-2 sm:pt-6 text-sm text-slate-700"><input type="checkbox" name="attivo" ${!p || p.attivo ? 'checked' : ''} class="w-4 h-4"> Prenotabile</label>
+            </div>
+            <button type="submit" class="${p ? btnSecondario : btnPrimario}">${p ? 'Salva le modifiche' : 'Aggiungi la prestazione'}</button>
+        </form>`;
+    $('vista').innerHTML = `
+        ${sceltaMedico()}
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <div class="lg:col-span-3 space-y-4">
+                <p class="text-sm text-slate-500">La tariffa è il costo della visita che il paziente paga a te ed è mostrata durante la prenotazione. La quota di prenotazione online è separata.</p>
+                ${prest.length ? prest.map(modulo).join('') : `<div class="${card} text-sm text-slate-500">Nessuna prestazione: aggiungine una per comparire nelle ricerche.</div>`}
+            </div>
+            <div class="lg:col-span-2 space-y-5">
+                ${modulo(null)}
+                <form data-medico="salva_profilo" class="${card} space-y-3">
+                    <h2 class="font-bold text-slate-900">Studio</h2>
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Indirizzo dello studio</span>
+                        <input name="indirizzo" maxlength="160" value="${esc(medico.indirizzo || '')}" class="${classeCampo}" placeholder="Comunicato al paziente con la conferma"></label>
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Telefono (visibile agli hub)</span>
+                        <input name="telefono" type="tel" maxlength="30" value="${esc(medico.telefono || '')}" class="${classeCampo}"></label>
+                    <button type="submit" class="${btnSecondario} w-full">Salva</button>
+                </form>
+            </div>
+        </div>`;
+}
+
+async function inviaMedico(form) {
+    const azione = form.dataset.medico;
+    const f = Object.fromEntries(new FormData(form).entries());
+    const dati = { azione, medico_id: st.medicoGestito, ...f };
+    if (azione === 'salva_prestazione') dati.attivo = form.attivo.checked;
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+        await api('medico', { conAccesso: true, dati });
+        const testi = { salva_prestazione: 'Prestazione salvata', salva_profilo: 'Dati dello studio salvati', aggiungi_chiusura: 'Chiusura aggiunta' };
+        await vai(st.scheda);
+        avviso(testi[azione] || 'Salvato', 'ok');
+    } catch (err) {
+        avviso(err.message);
+        btn.disabled = false;
+    }
+}
+
+// ---------------------------------------------------------------------
+// Conti con gli hub (80% all'hub, 20% a Click Dottore)
+// ---------------------------------------------------------------------
+const saldo = (c) => c.dovuto_a_click_dottore - c.dovuto_all_hub - c.versato_netto;
+
+function testoSaldo(c, perHub) {
+    const s = saldo(c);
+    if (s === 0) return '<span class="text-emerald-700 font-semibold">In pari</span>';
+    if (s > 0) return `<span class="text-amber-700 font-semibold">${perHub ? 'Devi versare' : 'L\'hub deve versare'} ${euro(s)}${perHub ? ' a Click Dottore' : ''}</span>`;
+    return `<span class="text-skybrand-700 font-semibold">${perHub ? 'Click Dottore ti deve' : 'Da versare all\'hub'} ${euro(-s)}</span>`;
+}
+
+function disegnaConti() {
+    const pct = st.impostazioni.quota_hub_percento || '80';
+    const iban = st.impostazioni.iban_click_dottore || '';
+    const intestatario = st.impostazioni.intestatario_iban || 'Click Dottore';
+    const regolazioni = (r) => r.length ? r.map((x) => `
+        <div class="flex items-center justify-between gap-3 text-sm py-2 border-t border-slate-100">
+            <div><div class="font-medium text-slate-900">${data(x.data)} · ${x.importo_cents > 0 ? 'bonifico dell\'hub a Click Dottore' : 'bonifico di Click Dottore all\'hub'}${st.io.ruolo === 'admin' ? ` · ${esc(x.hub?.nome || '')}` : ''}</div>${x.nota ? `<div class="text-xs text-slate-500">${esc(x.nota)}</div>` : ''}</div>
+            <div class="font-semibold text-slate-900">${euro(Math.abs(x.importo_cents))}</div>
+        </div>`).join('') : '<p class="text-sm text-slate-500">Nessun bonifico registrato.</p>';
+
+    if (st.io.ruolo !== 'admin') {
+        const c = st.conti.find((x) => x.hub_id === st.io.hub_id) || { dovuto_a_click_dottore: 0, dovuto_all_hub: 0, versato_netto: 0 };
+        const s = saldo(c);
+        $('vista').innerHTML = `
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-5xl">
+                <div class="${card} space-y-4">
+                    <h2 class="font-bold text-slate-900">Saldo con Click Dottore</h2>
+                    <div class="text-2xl">${testoSaldo(c, true)}</div>
+                    <dl class="grid grid-cols-1 gap-2 text-sm">
+                        <div class="flex justify-between"><dt class="text-slate-500">Quote incassate allo sportello: parte di Click Dottore (${100 - Number(pct)}%)</dt><dd class="font-medium">${euro(c.dovuto_a_click_dottore)}</dd></div>
+                        <div class="flex justify-between"><dt class="text-slate-500">Bollettini pagati online: la tua parte (${pct}%)</dt><dd class="font-medium">${euro(c.dovuto_all_hub)}</dd></div>
+                        <div class="flex justify-between"><dt class="text-slate-500">Bonifici già registrati (netto)</dt><dd class="font-medium">${euro(c.versato_netto)}</dd></div>
+                    </dl>
+                    ${s > 0 ? `<div class="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-slate-800 space-y-1">
+                        <p class="font-semibold">Versa ${euro(s)} con bonifico istantaneo, il prima possibile:</p>
+                        ${iban ? `<p>IBAN <span class="font-mono font-semibold select-all">${esc(iban)}</span></p><p>Intestato a ${esc(intestatario)}</p>` : '<p>L\'IBAN di Click Dottore non è ancora stato indicato: contatta l\'amministratore.</p>'}
+                        <p>Causale: <span class="font-mono select-all">Quote Click Dottore hub ${esc(st.io.hub?.codice || '')}</span></p>
+                        <p class="text-xs text-slate-500">Il saldo si aggiorna quando Click Dottore registra il bonifico ricevuto.</p>
+                    </div>` : ''}
+                    ${s < 0 ? '<p class="text-sm text-slate-600">Click Dottore ti verserà la tua parte delle quote pagate online con bonifico.</p>' : ''}
+                </div>
+                <div class="${card}"><h2 class="font-bold text-slate-900 mb-2">Bonifici registrati</h2>${regolazioni(st.regolazioni)}</div>
+            </div>`;
+        return;
+    }
+
+    $('vista').innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <div class="lg:col-span-3 space-y-3">
+                <p class="text-sm text-slate-500">Ripartizione della quota per le prenotazioni degli hub: ${pct}% all'hub, ${100 - Number(pct)}% a Click Dottore. Saldo positivo = l'hub deve versare a Click Dottore.</p>
+                ${st.conti.length ? st.conti.map((c) => `
+                    <div class="${card} !p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div><div class="font-semibold text-slate-900">${esc(c.nome)} <span class="font-mono text-xs text-slate-500">${esc(c.codice)}</span></div>
+                        <div class="text-xs text-slate-500">sportello: ${euro(c.dovuto_a_click_dottore)} a Click Dottore · bollettini: ${euro(c.dovuto_all_hub)} all'hub · bonifici: ${euro(c.versato_netto)}</div></div>
+                        <div class="text-sm shrink-0">${testoSaldo(c, false)}</div>
+                    </div>`).join('') : `<div class="${card} text-sm text-slate-500">Nessun hub.</div>`}
+                <div class="${card}"><h2 class="font-bold text-slate-900 mb-2">Ultimi bonifici registrati</h2>${regolazioni(st.regolazioni)}</div>
+            </div>
+            <form data-admin="registra_regolazione" class="${card} space-y-3 lg:col-span-2 self-start">
+                <h2 class="font-bold text-slate-900">Registra un bonifico</h2>
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Hub</span>
+                    <select name="hub_id" required class="${classeCampo}">${st.conti.map((c) => `<option value="${c.hub_id}">${esc(c.nome)} (${esc(c.codice)})</option>`).join('')}</select></label>
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Verso</span>
+                    <select name="verso" class="${classeCampo}"><option value="hub_a_cd">Ricevuto dall'hub</option><option value="cd_a_hub">Inviato all'hub</option></select></label>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Importo (€)</span><input name="importo_euro" type="number" min="0.01" step="0.01" required class="${classeCampo}"></label>
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Data</span><input name="data" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${classeCampo}"></label>
+                </div>
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Nota (facoltativa)</span><input name="nota" maxlength="200" class="${classeCampo}" placeholder="Es. CRO del bonifico"></label>
+                <button type="submit" class="${btnPrimario} w-full">Registra</button>
+            </form>
         </div>`;
 }
 
@@ -470,12 +863,25 @@ function disegnaUtenze() {
 }
 
 function disegnaImpostazioni() {
+    const i = st.impostazioni;
     $('vista').innerHTML = `
-        <form data-admin="imposta_quota" class="${card} space-y-3 max-w-md">
-            <h2 class="font-bold text-slate-900">Quota di prenotazione</h2>
-            <p class="text-sm text-slate-500">Importo pagato dal paziente per ogni prenotazione, sia online sia tramite hub.</p>
+        <form data-admin="imposta_impostazioni" class="${card} space-y-4 max-w-lg">
+            <div>
+                <h2 class="font-bold text-slate-900">Quota di prenotazione</h2>
+                <p class="text-sm text-slate-500">Importo pagato dal paziente per ogni prenotazione, sia online sia tramite hub.</p>
+            </div>
             <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Importo in euro</span>
                 <input name="quota_euro" type="number" min="0.5" max="100" step="0.01" value="${st.quota ? (st.quota / 100).toFixed(2) : ''}" required class="${classeCampo}"></label>
+            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Parte della quota che spetta all'hub (%)</span>
+                <input name="quota_hub_percento" type="number" min="0" max="100" step="1" value="${esc(i.quota_hub_percento ?? '80')}" required class="${classeCampo}"></label>
+            <div class="pt-2 border-t border-slate-100">
+                <h2 class="font-bold text-slate-900 mt-2">Conto per i bonifici degli hub</h2>
+                <p class="text-sm text-slate-500">Mostrato agli hub nella scheda Conti, per versare la parte di Click Dottore con bonifico istantaneo.</p>
+            </div>
+            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">IBAN</span>
+                <input name="iban" maxlength="40" value="${esc(i.iban_click_dottore ?? '')}" class="${classeCampo} font-mono" style="text-transform:uppercase"></label>
+            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Intestatario</span>
+                <input name="intestatario" maxlength="120" value="${esc(i.intestatario_iban ?? '')}" class="${classeCampo}"></label>
             <button type="submit" class="${btnPrimario}">Salva</button>
         </form>`;
 }
@@ -487,13 +893,22 @@ async function inviaAdmin(form) {
     let dati = { azione, ...f };
     if (azione === 'crea_medico') dati.prestazioni = String(f.prestazioni || '').split('\n').map((s) => s.trim()).filter(Boolean).map((nome) => ({ nome }));
     if (azione === 'crea_hub') dati.codice = String(f.codice || '').toUpperCase();
-    if (azione === 'imposta_quota') dati = { azione, quota_cents: Math.round(Number(String(f.quota_euro).replace(',', '.')) * 100) };
+    if (azione === 'imposta_impostazioni') {
+        dati = {
+            azione, quota_cents: Math.round(Number(String(f.quota_euro).replace(',', '.')) * 100),
+            quota_hub_percento: Number(f.quota_hub_percento), iban: f.iban, intestatario: f.intestatario,
+        };
+    }
     if (azione === 'invita_utente') { dati.hub_id = f.hub_id || null; dati.medico_id = f.medico_id || null; }
     btn.disabled = true;
     try {
         await api('admin', { conAccesso: true, dati });
-        const testi = { crea_medico: 'Medico aggiunto', crea_prestazione: 'Prestazione aggiunta', crea_hub: 'Hub aggiunto', invita_utente: 'Utenza creata: l\'invito è stato inviato via email', imposta_quota: 'Quota aggiornata' };
-        if (azione === 'imposta_quota') st.quota = dati.quota_cents;
+        const testi = {
+            crea_medico: 'Medico aggiunto', crea_prestazione: 'Prestazione aggiunta', crea_hub: 'Hub aggiunto',
+            invita_utente: 'Utenza creata: l\'invito è stato inviato via email', imposta_impostazioni: 'Impostazioni salvate',
+            registra_regolazione: 'Bonifico registrato',
+        };
+        if (azione === 'imposta_impostazioni') st.quota = dati.quota_cents;
         await vai(st.scheda);
         avviso(testi[azione] || 'Fatto', 'ok');
     } catch (err) {
@@ -510,16 +925,48 @@ document.addEventListener('click', async (e) => {
     if (!t) return;
     if (t.hasAttribute('data-esci')) { await supabase.auth.signOut(); return location.replace('accedi.html'); }
     if (t.dataset.scheda) return vai(t.dataset.scheda);
+    if (t.hasAttribute('data-vedi-richieste')) { st.filtro = 'da_confermare'; return vai('prenotazioni'); }
     if (t.dataset.filtro) { st.filtro = t.dataset.filtro; return disegnaPrenotazioni(); }
+    if (t.dataset.rapida) return azionePrenotazione(t.dataset.rapida, {}, t, t.dataset.id);
     if (t.dataset.apri) return apriPannello(t.dataset.apri);
-    if (t.hasAttribute('data-chiudi')) return chiudiPannello();
-    if (t.dataset.azione) {
-        const motivo = $('pannello-corpo').querySelector('[data-motivo]')?.value;
-        return azionePrenotazione(t.dataset.azione, t.dataset.azione === 'annulla' ? { nota: motivo } : {}, t);
+    if (t.dataset.apriDopo) {
+        st.filtro = 'tutte';
+        await vai('prenotazioni');
+        return apriPannello(t.dataset.apriDopo);
     }
-    if (t.dataset.scegliMedico) { st.nuova.medicoId = t.dataset.scegliMedico; return disegnaNuova(); }
-    if (t.hasAttribute('data-cambia-medico')) { st.nuova.medicoId = null; return disegnaNuova(); }
-    if (t.hasAttribute('data-nuova-ancora')) { st.nuova = { medicoId: null, cercaMedico: '', hubId: st.nuova.hubId, esito: null }; return disegnaNuova(); }
+    if (t.hasAttribute('data-chiudi')) return chiudiPannello();
+    if (t.hasAttribute('data-bollettino')) return stampaBollettino(t);
+    if (t.dataset.azione) {
+        const corpo = $('pannello-corpo');
+        const extra = {};
+        if (t.dataset.azione === 'annulla') extra.nota = corpo.querySelector('[data-motivo]')?.value;
+        if (t.dataset.azione === 'rifiuta') extra.nota = corpo.querySelector('[data-motivo-rifiuto]')?.value;
+        if (t.dataset.azione === 'registra_incasso') {
+            extra.metodo_pagamento = corpo.querySelector('[data-metodo]')?.value;
+            if (!extra.metodo_pagamento) { $('msg-pannello').hidden = false; return messaggio($('msg-pannello'), 'Scegli come è stata incassata la quota'); }
+        }
+        return azionePrenotazione(t.dataset.azione, extra, t);
+    }
+    if (t.dataset.scegliMedico) { st.nuova.medicoId = t.dataset.scegliMedico; st.nuova.prestazioneId = null; st.nuova.slot = null; return disegnaNuova(); }
+    if (t.hasAttribute('data-cambia-medico')) { st.nuova.medicoId = null; st.nuova.prestazioneId = null; st.nuova.slot = null; return disegnaNuova(); }
+    if (t.hasAttribute('data-nuova-ancora')) { st.nuova = { medicoId: null, cercaMedico: '', hubId: st.nuova.hubId, prestazioneId: null, slot: null, esito: null }; return disegnaNuova(); }
+    if (t.dataset.aggiungiFascia) {
+        leggiFasce();
+        const g = Number(t.dataset.aggiungiFascia);
+        const ultime = st.orari.filter((f) => f.giorno === g);
+        st.orari.push(ultime.length ? { giorno: g, inizio: '15:00', fine: '19:00' } : { giorno: g, inizio: '09:00', fine: '13:00' });
+        return disegnaOrari();
+    }
+    if (t.dataset.togliFascia) { leggiFasce(); st.orari.splice(Number(t.dataset.togliFascia), 1); return disegnaOrari(); }
+    if (t.hasAttribute('data-salva-orari')) return salvaOrari(t);
+    if (t.dataset.eliminaChiusura) {
+        t.disabled = true;
+        try {
+            await api('medico', { conAccesso: true, dati: { azione: 'elimina_chiusura', id: t.dataset.eliminaChiusura, medico_id: st.medicoGestito } });
+            await vai('orari');
+        } catch (err) { avviso(err.message); t.disabled = false; }
+        return;
+    }
     if (t.dataset.attivo) {
         const [tabella, id, valore] = t.dataset.attivo.split(':');
         t.disabled = true;
@@ -533,12 +980,7 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('submit', (e) => {
     const form = e.target;
     if (form.id === 'form-nuova') { e.preventDefault(); return inviaNuova(form); }
-    if (form.hasAttribute('data-form-visita')) {
-        e.preventDefault();
-        const valore = form.visita_il.value;
-        if (!valore) return;
-        return azionePrenotazione('fissa_visita', { visita_il: new Date(valore).toISOString(), nota: form.nota.value }, form.querySelector('button[type=submit]'));
-    }
+    if (form.dataset.medico) { e.preventDefault(); return inviaMedico(form); }
     if (form.dataset.admin) { e.preventDefault(); return inviaAdmin(form); }
 });
 
@@ -546,11 +988,17 @@ document.addEventListener('input', (e) => {
     if (e.target.id === 'cerca-prenotazioni') { st.cerca = e.target.value; disegnaElencoPrenotazioni(); }
     if (e.target.id === 'cerca-medico') {
         st.nuova.cercaMedico = e.target.value;
-        disegnaRisultatiMedici(st.medici.filter((m) => m.attivo && st.prestazioni.some((p) => p.medico_id === m.id && p.attivo)));
+        disegnaRisultatiMedici(mediciPrenotabili());
     }
 });
 document.addEventListener('change', (e) => {
     if (e.target.name === 'hub_id' && e.target.closest('#form-nuova')) st.nuova.hubId = e.target.value;
+    if (e.target.name === 'prestazione_id' && e.target.closest('#form-nuova')) {
+        st.nuova.prestazioneId = e.target.value;
+        st.nuova.slot = null;
+        caricaSlotNuova();
+    }
+    if (e.target.id === 'medico-gestito') { st.medicoGestito = e.target.value; vai(st.scheda); }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('pannello').hidden) chiudiPannello(); });
 

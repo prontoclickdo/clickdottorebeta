@@ -49,9 +49,6 @@
         </div>
 
         <div id="contenuto" hidden class="space-y-5">
-            <div id="avviso-annullato" hidden></div>
-            <div id="avviso-account" hidden class="rounded-xl border px-4 py-3 text-sm"></div>
-
             <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 flex items-center gap-4">
                 <div class="w-14 h-14 rounded-2xl bg-skybrand-50 text-skybrand-500 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-user-doctor"></i></div>
                 <div class="min-w-0">
@@ -60,48 +57,85 @@
                 </div>
             </section>
 
-            <!-- Passo 1: prestazione e dati -->
-            <form id="modulo" novalidate class="space-y-5">
+            <!-- Visitatore senza account -->
+            <section id="serve-account" hidden class="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 text-center space-y-4">
+                <div class="w-12 h-12 mx-auto rounded-2xl bg-skybrand-50 text-skybrand-500 flex items-center justify-center text-xl"><i class="fa-solid fa-user-lock"></i></div>
+                <h2 class="text-lg font-bold text-slate-900">Accedi per prenotare</h2>
+                <p class="text-sm text-slate-600 max-w-md mx-auto">Per inviare una richiesta di prenotazione serve un account Click Dottore: così ritrovi la conferma del medico e paghi la quota dalla tua area personale.</p>
+                <div class="flex flex-col sm:flex-row justify-center gap-3">
+                    <a id="link-accedi" href="accedi.html" class="px-5 py-2.5 border border-slate-300 text-slate-700 font-medium rounded-xl hover:border-skybrand-400 transition">Accedi</a>
+                    <a href="registrati.html" class="px-5 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition">Registrati gratis</a>
+                </div>
+                <div id="anteprima-prestazioni" class="text-left pt-4 border-t border-slate-200 space-y-2"></div>
+            </section>
+
+            <!-- Utenza del personale -->
+            <section id="personale" hidden class="bg-white border border-slate-200 rounded-2xl p-6 text-center space-y-3">
+                <p class="text-sm text-slate-600">Hai effettuato l'accesso con un'utenza del personale. Per prenotare per conto di un paziente usa la scheda "Nuova prenotazione" dell'area riservata.</p>
+                <a href="area.html" class="inline-block px-5 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white font-medium text-sm rounded-xl transition">Apri l'area riservata</a>
+            </section>
+
+            <!-- Richiesta del paziente -->
+            <form id="modulo" hidden novalidate class="space-y-5">
+                <div class="rounded-xl border px-4 py-3 text-sm bg-skybrand-50 border-skybrand-200 text-slate-700">
+                    <i class="fa-solid fa-circle-info mr-1.5 text-skybrand-500"></i>Scegli prestazione e orario: la richiesta arriva al medico, che la conferma o la rifiuta.
+                    Solo dopo la conferma paghi la quota di prenotazione<span id="quota-info"></span>, entro 24 ore.
+                </div>
                 <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
                     <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">1 · Scegli la prestazione</h2>
                     <div id="prestazioni" class="space-y-2"></div>
                 </section>
 
                 <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
-                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">2 · Dati del paziente</h2>
+                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">2 · Scegli giorno e ora</h2>
+                    <div id="slot"><p class="text-sm text-slate-500">Scegli prima la prestazione.</p></div>
+                </section>
+
+                <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
+                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">3 · Dati del paziente</h2>
+                    <p class="text-xs text-slate-500 mb-4">Abbiamo compilato i dati del tuo account: modificali se prenoti per un'altra persona.</p>
                     <div id="campi-paziente"></div>
                     <!-- campo trappola per i programmi automatici: le persone non lo vedono -->
                     <input type="text" name="sito" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
                 </section>
 
                 <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-3 text-sm text-slate-700">
-                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">3 · Consensi</h2>
+                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">4 · Consensi</h2>
                     <label class="flex items-start gap-3"><input type="checkbox" name="consenso_privacy" class="mt-1 w-4 h-4 shrink-0"> <span>Ho letto l'<a href="#" class="text-skybrand-600 underline">informativa privacy</a> e accetto i <a href="#" class="text-skybrand-600 underline">termini del servizio</a>, compresa la politica di rimborso.</span></label>
-                    <label class="flex items-start gap-3"><input type="checkbox" name="consenso_dati_sanitari" class="mt-1 w-4 h-4 shrink-0"> <span>Acconsento al trattamento dei miei dati relativi alla salute, necessario per organizzare la visita con il medico scelto.</span></label>
+                    <label class="flex items-start gap-3"><input type="checkbox" name="consenso_dati_sanitari" class="mt-1 w-4 h-4 shrink-0"> <span>Acconsento al trattamento dei dati relativi alla salute, necessario per organizzare la visita con il medico scelto.</span></label>
                 </section>
 
                 <div id="errori-modulo" hidden></div>
-
                 <button type="submit" class="w-full sm:w-auto px-6 py-3 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition shadow-md shadow-skybrand-500/20">
                     Continua al riepilogo <i class="fa-solid fa-arrow-right ml-1"></i>
                 </button>
             </form>
 
-            <!-- Passo 2: riepilogo e pagamento -->
             <section id="riepilogo" hidden class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-5">
-                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">Riepilogo della prenotazione</h2>
+                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">Riepilogo della richiesta</h2>
                 <dl id="riepilogo-dati" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm"></dl>
                 <div class="rounded-xl bg-skybrand-50 border border-skybrand-200 p-4 text-sm text-slate-700">
-                    Quota di prenotazione: <strong id="riepilogo-quota" class="text-slate-900"></strong><br>
-                    <span class="text-xs text-slate-500">Il pagamento avviene sulla pagina sicura di Stripe. Il costo della visita si concorda con il medico.</span>
+                    Adesso non paghi nulla. Se il medico conferma riceverai un'email e avrai <strong>24 ore</strong> per pagare la quota di prenotazione<span id="riepilogo-quota"></span> dalla tua area personale.
+                    <span class="block text-xs text-slate-500 mt-1">Il costo della visita si paga al medico.</span>
                 </div>
-                <div id="errori-pagamento" hidden></div>
+                <div id="errori-invio" hidden></div>
                 <div class="flex flex-col sm:flex-row gap-3">
-                    <button type="button" id="btn-paga" class="px-6 py-3 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition shadow-md shadow-skybrand-500/20 disabled:opacity-60">
-                        <i class="fa-solid fa-lock mr-1"></i> <span id="btn-paga-testo">Paga e prenota</span>
+                    <button type="button" id="btn-invia" class="px-6 py-3 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition shadow-md shadow-skybrand-500/20 disabled:opacity-60">
+                        <i class="fa-solid fa-paper-plane mr-1"></i> <span id="btn-invia-testo">Invia la richiesta al medico</span>
                     </button>
-                    <button type="button" id="btn-modifica" class="px-6 py-3 border border-slate-300 text-slate-700 font-medium rounded-xl hover:border-skybrand-400 transition">Modifica i dati</button>
+                    <button type="button" id="btn-modifica" class="px-6 py-3 border border-slate-300 text-slate-700 font-medium rounded-xl hover:border-skybrand-400 transition">Modifica</button>
                 </div>
+            </section>
+
+            <section id="inviata" hidden class="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 text-center space-y-4">
+                <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl"><i class="fa-solid fa-paper-plane"></i></div>
+                <h2 class="text-xl font-bold text-slate-900">Richiesta inviata al medico</h2>
+                <p class="text-sm text-slate-600 max-w-md mx-auto">Ti avviseremo via email appena il medico risponde. Se conferma, avrai 24 ore per pagare la quota dalla tua area personale.</p>
+                <div class="inline-block rounded-2xl bg-skybrand-50 border border-skybrand-200 px-6 py-4">
+                    <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Codice richiesta</div>
+                    <div id="codice-inviato" class="text-2xl font-bold tracking-wider text-slate-900 font-mono"></div>
+                </div>
+                <div><a href="area-paziente.html" class="inline-block px-5 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition">Vai alla tua area</a></div>
             </section>
         </div>
     </main>
@@ -112,26 +146,39 @@
         </div>
     </footer>
     <script type="module">
-        import { supabase, api, esc, euro, data, quotaCents, htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio } from './app.js';
+        import { supabase, api, esc, euro, data, quando, durata, quotaCents, htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, slotLiberi, selettoreSlot } from './app.js';
 
         const params = new URLSearchParams(location.search);
         const medicoId = params.get('medico') || '';
-        const CHIAVE = 'cd-prenotazione-' + medicoId;
         const $ = (id) => document.getElementById(id);
-        let medico, prestazioni = [], quota = null, richiesta = null, paziente = null;
+        let medico, prestazioni = [], quota = null, paziente = null, prestazioneId = null, slotScelto = null, richiesta = null;
+        const torna = `prenota.html?medico=${medicoId}`;
 
-        function salvaBozza(dati) { try { sessionStorage.setItem(CHIAVE, JSON.stringify(dati)); } catch (_) {} }
-        function leggiBozza() { try { return JSON.parse(sessionStorage.getItem(CHIAVE) || 'null'); } catch (_) { return null; } }
+        function testata(staff) {
+            $('testata-destra').innerHTML = paziente || staff
+                ? `<a href="${staff ? 'area.html' : 'area-paziente.html'}" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 text-slate-700 hover:border-skybrand-400 transition"><i class="fa-solid fa-user"></i><span class="hidden sm:inline">${staff ? 'Area riservata' : 'La mia area'}</span></a>`
+                : `<a href="accedi.html?torna=${encodeURIComponent(torna)}" class="text-slate-600 hover:text-skybrand-600 transition">Accedi</a>
+                   <a href="registrati.html" class="px-3.5 py-2 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition">Registrati</a>`;
+        }
+
+        const infoPrestazione = (p) => [
+            `Durata ${durata(p.durata_minuti || 30)}`,
+            p.prezzo_visita_cents != null ? `tariffa della visita ${euro(p.prezzo_visita_cents)}` : '',
+        ].filter(Boolean).join(' · ');
 
         async function avvia() {
             if (!/^[0-9a-f-]{36}$/i.test(medicoId)) return nonTrovato();
-            // paziente registrato: dati già compilati e prenotazione collegata al suo account
             const { data: sess } = await supabase.auth.getSession();
+            let staff = false;
             if (sess.session) {
                 const { data: paz } = await supabase.from('pazienti').select('*').eq('id', sess.session.user.id).maybeSingle();
                 paziente = paz || null;
+                if (!paziente) {
+                    const { data: prof } = await supabase.from('profili').select('id').eq('id', sess.session.user.id).maybeSingle();
+                    staff = !!prof;
+                }
             }
-            testata();
+            testata(staff);
             const [{ data: m }, { data: pr }, q] = await Promise.all([
                 supabase.from('medici_pubblici').select('*').eq('id', medicoId).maybeSingle(),
                 supabase.from('prestazioni_pubbliche').select('*').eq('medico_id', medicoId).order('nome'),
@@ -139,103 +186,115 @@
             ]);
             if (!m || !pr || !pr.length) return nonTrovato();
             medico = m; prestazioni = pr; quota = q;
-
             $('medico-nome').textContent = `Dott. ${m.nome} ${m.cognome}`;
             $('medico-info').textContent = `${m.specializzazione} · ${m.citta}`;
-
-            const bozza = leggiBozza() || {};
-            const scelta = params.get('prestazione') || bozza.prestazione_id || (pr.length === 1 ? pr[0].id : '');
-            $('prestazioni').innerHTML = pr.map((p) => `
-                <label class="flex items-start gap-3 p-3.5 rounded-xl border border-slate-200 hover:border-skybrand-300 cursor-pointer transition">
-                    <input type="radio" name="prestazione_id" value="${esc(p.id)}" class="mt-1 w-4 h-4 shrink-0" ${p.id === scelta ? 'checked' : ''}>
-                    <span class="min-w-0"><span class="block font-semibold text-slate-900">${esc(p.nome)}</span>
-                    ${p.descrizione ? `<span class="block text-xs text-slate-500 mt-0.5">${esc(p.descrizione)}</span>` : ''}
-                    ${p.prezzo_visita_cents != null ? `<span class="block text-xs text-slate-500 mt-0.5">Costo indicativo della visita: ${euro(p.prezzo_visita_cents)}</span>` : ''}</span>
-                </label>`).join('');
-            const datiAccount = paziente ? {
-                nome: paziente.nome, cognome: paziente.cognome, codice_fiscale: paziente.codice_fiscale,
-                data_nascita: paziente.data_nascita, telefono: paziente.telefono, email: paziente.email,
-            } : {};
-            $('campi-paziente').innerHTML = htmlCampiPaziente({ ...datiAccount, ...(bozza.paziente || {}), note: bozza.note || '' });
-            const av = $('avviso-account');
-            av.hidden = false;
-            const torna = encodeURIComponent(`prenota.html?medico=${medicoId}`);
-            if (paziente) {
-                av.className = 'rounded-xl border px-4 py-3 text-sm bg-emerald-50 border-emerald-200 text-emerald-800';
-                av.innerHTML = `<i class="fa-solid fa-circle-check mr-1.5"></i>Hai effettuato l'accesso come <strong>${esc(paziente.nome)} ${esc(paziente.cognome)}</strong>: i tuoi dati sono già compilati e la prenotazione comparirà nella <a href="area-paziente.html" class="underline font-medium">tua area</a>.`;
-            } else {
-                av.className = 'rounded-xl border px-4 py-3 text-sm bg-skybrand-50 border-skybrand-200 text-slate-700';
-                av.innerHTML = `Hai un account? <a href="accedi.html?torna=${torna}" class="text-skybrand-600 font-semibold underline">Accedi</a> per compilare i dati in automatico e ritrovare la prenotazione nella tua area. Non hai un account? <a href="registrati.html" class="text-skybrand-600 font-semibold underline">Registrati</a>, oppure prosegui senza account.`;
-            }
-            if (params.get('annullato')) {
-                $('avviso-annullato').hidden = false;
-                messaggio($('avviso-annullato'), 'Il pagamento non è stato completato e non ti è stato addebitato nulla. Controlla i dati e riprova quando vuoi.', 'info');
-            }
             $('caricamento').hidden = true;
             $('contenuto').hidden = false;
+
+            if (!paziente) {
+                if (staff) { $('personale').hidden = false; return; }
+                $('link-accedi').href = `accedi.html?torna=${encodeURIComponent(torna)}`;
+                $('anteprima-prestazioni').innerHTML = `<div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Prestazioni</div>` +
+                    pr.map((p) => `<div class="text-sm"><span class="font-medium text-slate-900">${esc(p.nome)}</span> <span class="text-slate-500">· ${esc(infoPrestazione(p))}</span></div>`).join('');
+                $('serve-account').hidden = false;
+                return;
+            }
+
+            $('quota-info').textContent = quota ? ` (${euro(quota)})` : '';
+            $('prestazioni').innerHTML = pr.map((p) => `
+                <label class="flex items-start gap-3 p-3.5 rounded-xl border border-slate-200 hover:border-skybrand-300 cursor-pointer transition">
+                    <input type="radio" name="prestazione_id" value="${esc(p.id)}" class="mt-1 w-4 h-4 shrink-0">
+                    <span class="min-w-0"><span class="block font-semibold text-slate-900">${esc(p.nome)}</span>
+                    ${p.descrizione ? `<span class="block text-xs text-slate-500 mt-0.5">${esc(p.descrizione)}</span>` : ''}
+                    <span class="block text-xs text-slate-500 mt-0.5">${esc(infoPrestazione(p))}</span></span>
+                </label>`).join('');
+            $('campi-paziente').innerHTML = htmlCampiPaziente({
+                nome: paziente.nome, cognome: paziente.cognome, codice_fiscale: paziente.codice_fiscale,
+                data_nascita: paziente.data_nascita, telefono: paziente.telefono, email: paziente.email,
+            });
+            $('modulo').hidden = false;
+            const iniziale = params.get('prestazione') || (pr.length === 1 ? pr[0].id : '');
+            const radio = [...document.querySelectorAll('input[name=prestazione_id]')].find((r) => r.value === iniziale);
+            if (radio) { radio.checked = true; scegliPrestazione(iniziale); }
         }
 
-        function testata() {
-            $('testata-destra').innerHTML = paziente
-                ? `<a href="area-paziente.html" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 text-slate-700 hover:border-skybrand-400 transition"><i class="fa-solid fa-user"></i><span class="hidden sm:inline">La mia area</span></a>`
-                : `<a href="accedi.html?torna=${encodeURIComponent(`prenota.html?medico=${medicoId}`)}" class="text-slate-600 hover:text-skybrand-600 transition">Accedi</a>
-                   <a href="registrati.html" class="px-3.5 py-2 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition">Registrati</a>`;
+        async function scegliPrestazione(id) {
+            prestazioneId = id;
+            slotScelto = null;
+            $('slot').innerHTML = '<p class="text-sm text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Carico gli orari liberi...</p>';
+            try {
+                const slots = await slotLiberi(id);
+                if (prestazioneId !== id) return;
+                selettoreSlot($('slot'), slots, (iso) => { slotScelto = iso; });
+            } catch (err) {
+                $('slot').innerHTML = `<p class="text-sm text-red-700">${esc(err.message)}</p>`;
+            }
         }
 
         function nonTrovato() { $('caricamento').hidden = true; $('non-trovato').hidden = false; }
 
+        $('modulo').addEventListener('change', (e) => {
+            if (e.target.name === 'prestazione_id') scegliPrestazione(e.target.value);
+        });
+
         $('modulo').addEventListener('submit', (e) => {
             e.preventDefault();
             const form = e.currentTarget;
-            const { paziente, note } = leggiPaziente(form);
-            const prestazione_id = form.prestazione_id?.value || [...form.querySelectorAll('input[name=prestazione_id]')].find((r) => r.checked)?.value;
+            const { paziente: dati, note } = leggiPaziente(form);
             const errori = [];
-            if (!prestazione_id) errori.push('Scegli la prestazione');
-            errori.push(...erroriPaziente(paziente));
+            if (!prestazioneId) errori.push('Scegli la prestazione');
+            else if (!slotScelto) errori.push('Scegli giorno e ora della visita');
+            errori.push(...erroriPaziente(dati));
             if (!form.consenso_privacy.checked || !form.consenso_dati_sanitari.checked) errori.push('Per prenotare servono entrambi i consensi');
             if (errori.length) { $('errori-modulo').hidden = false; messaggio($('errori-modulo'), errori); return; }
             $('errori-modulo').hidden = true;
 
-            richiesta = { medico_id: medicoId, prestazione_id, paziente, note, consenso_privacy: true, consenso_dati_sanitari: true, sito: form.sito.value };
-            salvaBozza({ prestazione_id, paziente, note });
-
-            const pr = prestazioni.find((p) => p.id === prestazione_id);
+            richiesta = { prestazione_id: prestazioneId, inizio: slotScelto, paziente: dati, note, consenso_privacy: true, consenso_dati_sanitari: true, sito: form.sito.value };
+            const pr = prestazioni.find((p) => p.id === prestazioneId);
             const riga = (k, v) => `<div><dt class="text-xs text-slate-500">${k}</dt><dd class="font-medium text-slate-900 break-words">${esc(v)}</dd></div>`;
             $('riepilogo-dati').innerHTML = [
                 riga('Medico', `Dott. ${medico.nome} ${medico.cognome} · ${medico.specializzazione}`),
                 riga('Prestazione', pr?.nome || ''),
-                riga('Paziente', `${paziente.nome} ${paziente.cognome}`),
-                riga('Codice fiscale', paziente.codice_fiscale),
-                riga('Data di nascita', data(paziente.data_nascita)),
-                riga('Telefono', paziente.telefono),
-                riga('Email', paziente.email),
+                riga('Data e ora', quando(slotScelto)),
+                riga('Durata', durata(pr?.durata_minuti || 30)),
+                pr?.prezzo_visita_cents != null ? riga('Tariffa della visita', euro(pr.prezzo_visita_cents)) : '',
+                riga('Paziente', `${dati.nome} ${dati.cognome}`),
+                riga('Codice fiscale', dati.codice_fiscale),
+                riga('Data di nascita', data(dati.data_nascita)),
+                riga('Telefono', dati.telefono),
+                riga('Email', dati.email),
                 note ? riga('Note', note) : '',
             ].join('');
-            $('riepilogo-quota').textContent = quota ? euro(quota) : '-';
-            $('btn-paga-testo').textContent = quota ? `Paga ${euro(quota)} e prenota` : 'Paga e prenota';
+            $('riepilogo-quota').textContent = quota ? ` di ${euro(quota)}` : '';
             form.hidden = true;
             $('riepilogo').hidden = false;
-            messaggio($('errori-pagamento'), '');
+            messaggio($('errori-invio'), '');
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
 
-        $('btn-modifica').addEventListener('click', () => {
-            $('riepilogo').hidden = true;
-            $('modulo').hidden = false;
-        });
+        $('btn-modifica').addEventListener('click', () => { $('riepilogo').hidden = true; $('modulo').hidden = false; });
 
-        $('btn-paga').addEventListener('click', async () => {
-            const btn = $('btn-paga');
+        $('btn-invia').addEventListener('click', async () => {
+            const btn = $('btn-invia');
             btn.disabled = true;
-            $('btn-paga-testo').textContent = 'Apertura del pagamento...';
+            $('btn-invia-testo').textContent = 'Invio in corso...';
             try {
-                const { url } = await api('prenota-online', { dati: richiesta, conAccesso: !!paziente });
-                location.href = url;
+                const r = await api('richiesta-online', { dati: richiesta, conAccesso: true });
+                $('codice-inviato').textContent = r.codice;
+                $('riepilogo').hidden = true;
+                $('inviata').hidden = false;
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             } catch (err) {
-                $('errori-pagamento').hidden = false;
-                messaggio($('errori-pagamento'), err.message);
+                $('errori-invio').hidden = false;
+                messaggio($('errori-invio'), err.message);
                 btn.disabled = false;
-                $('btn-paga-testo').textContent = quota ? `Paga ${euro(quota)} e prenota` : 'Paga e prenota';
+                $('btn-invia-testo').textContent = 'Invia la richiesta al medico';
+                if (/orario/i.test(err.message) && prestazioneId) {
+                    // l'orario è stato preso da altri: torno alla scelta con gli orari aggiornati
+                    $('riepilogo').hidden = true; $('modulo').hidden = false;
+                    $('errori-modulo').hidden = false; messaggio($('errori-modulo'), err.message);
+                    scegliPrestazione(prestazioneId);
+                }
             }
         });
 

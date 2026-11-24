@@ -45,7 +45,7 @@
             <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 id="saluto" class="text-xl font-bold text-slate-900"></h1>
-                    <p class="text-sm text-slate-500">Cerca lo specialista e prenota: i tuoi dati saranno già compilati.</p>
+                    <p class="text-sm text-slate-500">Cerca lo specialista, scegli l'orario e invia la richiesta: i tuoi dati saranno già compilati.</p>
                 </div>
                 <a href="index.html" class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition shadow-md shadow-skybrand-500/20"><i class="fa-solid fa-magnifying-glass"></i> Prenota una visita</a>
             </section>
@@ -91,22 +91,50 @@
         </div>
     </footer>
     <script type="module">
-        import { supabase, api, esc, euro, dataOra, erroriPaziente, messaggio } from './app.js';
+        import { supabase, api, esc, euro, dataOra, quando, erroriPaziente, messaggio } from './app.js';
         const $ = (id) => document.getElementById(id);
 
         // stati visti dal paziente
         const STATI_PAZIENTE = {
-            pagata: ['Prenotata, in attesa del medico', 'bg-amber-50 text-amber-700'],
-            presa_in_carico: ['Il medico ti contatterà', 'bg-skybrand-50 text-skybrand-700'],
-            visita_fissata: ['Visita fissata', 'bg-emerald-50 text-emerald-700'],
-            completata: ['Visita completata', 'bg-slate-100 text-slate-600'],
+            richiesta: ['In attesa della conferma del medico', 'bg-amber-50 text-amber-700'],
+            da_pagare: ['Confermata dal medico: paga la quota', 'bg-skybrand-50 text-skybrand-700'],
+            confermata: ['Visita confermata', 'bg-emerald-50 text-emerald-700'],
+            completata: ['Visita svolta', 'bg-slate-100 text-slate-600'],
+            rifiutata: ['Non accettata dal medico', 'bg-red-50 text-red-700'],
             annullata: ['Annullata', 'bg-red-50 text-red-700'],
             rimborsata: ['Annullata e rimborsata', 'bg-red-50 text-red-700'],
+            scaduta: ['Scaduta', 'bg-slate-100 text-slate-500'],
         };
         const badge = (stato) => {
             const [t, c] = STATI_PAZIENTE[stato] || [stato, 'bg-slate-100 text-slate-600'];
             return `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${c}">${esc(t)}</span>`;
         };
+
+        // pagamento e annullamento delle richieste
+        document.addEventListener('click', async (e) => {
+            const b = e.target.closest('[data-paga], [data-annulla]');
+            if (!b) return;
+            const box = b.closest('article').querySelector('[data-msg]');
+            if (b.dataset.annulla && b.dataset.confermato !== '1') {
+                b.dataset.confermato = '1';
+                b.textContent = 'Clicca di nuovo per annullare';
+                return;
+            }
+            b.disabled = true;
+            try {
+                if (b.dataset.paga) {
+                    const { url } = await api('paga', { dati: { id: b.dataset.paga }, conAccesso: true });
+                    location.href = url;
+                    return;
+                }
+                await api('annulla-richiesta', { dati: { id: b.dataset.annulla }, conAccesso: true });
+                await caricaPrenotazioni();
+            } catch (err) {
+                box.hidden = false;
+                messaggio(box, err.message);
+                b.disabled = false;
+            }
+        });
 
         document.addEventListener('click', async (e) => {
             if (!e.target.closest('[data-esci]')) return;
@@ -162,22 +190,31 @@
 
         async function caricaPrenotazioni() {
             const { data: righe, error } = await supabase.from('prenotazioni')
-                .select('id, codice, stato, creata_il, visita_il, nota_medico, quota_cents, medico:medici(nome, cognome, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)')
+                .select('id, codice, stato, creata_il, visita_il, scadenza, pagata_il, nota_medico, motivo_rifiuto, quota_cents, medico:medici(nome, cognome, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)')
                 .eq('paziente_id', uid)
-                .not('stato', 'in', '(in_attesa_pagamento,scaduta)')
                 .order('creata_il', { ascending: false });
             const el = $('elenco');
             if (error) { el.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-6 text-sm text-red-700">Impossibile caricare le prenotazioni, ricarica la pagina.</div>`; return; }
             if (!righe.length) {
                 el.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-500">
-                    Non hai ancora prenotazioni. <a href="index.html" class="text-skybrand-600 font-medium hover:text-skybrand-700">Cerca uno specialista</a></div>`;
+                    Non hai ancora richieste di prenotazione. <a href="index.html" class="text-skybrand-600 font-medium hover:text-skybrand-700">Cerca uno specialista</a></div>`;
                 return;
             }
             el.innerHTML = righe.map((p) => {
                 const m = p.medico;
-                const visita = p.stato === 'visita_fissata' && p.visita_il
-                    ? `<p class="mt-3 text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5"><i class="fa-regular fa-calendar-check mr-1.5"></i>Visita il <strong>${esc(dataOra(p.visita_il))}</strong>${m?.indirizzo ? ` · ${esc(m.indirizzo)}, ${esc(m.citta)}` : ''}</p>` : '';
-                const nota = p.nota_medico ? `<p class="mt-2 text-sm text-slate-600"><span class="text-slate-400">Nota del medico:</span> ${esc(p.nota_medico)}</p>` : '';
+                const dove = m?.indirizzo ? ` · ${esc(m.indirizzo)}, ${esc(m.citta)}` : '';
+                const visita = p.visita_il
+                    ? `<p class="mt-3 text-sm ${p.stato === 'confermata' ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : 'text-slate-700 bg-slate-50 border-slate-200'} border rounded-xl px-3.5 py-2.5"><i class="fa-regular fa-calendar${p.stato === 'confermata' ? '-check' : ''} mr-1.5"></i><strong>${esc(quando(p.visita_il))}</strong>${p.stato === 'confermata' ? dove : ''}</p>` : '';
+                const paga = p.stato === 'da_pagare' && !p.pagata_il ? `
+                    <div class="mt-3 rounded-xl border border-skybrand-200 bg-skybrand-50 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <p class="text-sm text-slate-700">Il medico ha confermato. Paga la quota entro <strong>${esc(quando(p.scadenza))}</strong>, altrimenti l'orario torna libero.</p>
+                        <button type="button" data-paga="${p.id}" class="shrink-0 px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60"><i class="fa-solid fa-lock mr-1"></i> Paga ${euro(p.quota_cents)}</button>
+                    </div>` : '';
+                const attesa = p.stato === 'richiesta' ? `<p class="mt-2 text-xs text-slate-500">Il medico deve rispondere entro ${esc(quando(p.scadenza))}. Ti avviseremo via email.</p>` : '';
+                const rifiuto = p.motivo_rifiuto ? `<p class="mt-2 text-sm text-slate-600"><span class="text-slate-400">Motivo:</span> ${esc(p.motivo_rifiuto)}</p>` : '';
+                const nota = p.nota_medico ? `<p class="mt-2 text-sm text-slate-600"><span class="text-slate-400">Nota:</span> ${esc(p.nota_medico)}</p>` : '';
+                const annulla = ['richiesta', 'da_pagare'].includes(p.stato) && !p.pagata_il
+                    ? `<button type="button" data-annulla="${p.id}" class="mt-3 text-sm text-red-700 hover:text-red-800 font-medium">Annulla la richiesta</button>` : '';
                 return `
                 <article class="bg-white border border-slate-200 rounded-2xl p-5">
                     <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
@@ -187,8 +224,12 @@
                         </div>
                         <div class="shrink-0">${badge(p.stato)}</div>
                     </div>
-                    ${visita}${nota}
-                    <p class="mt-3 text-xs text-slate-500">Codice <span class="font-mono font-semibold text-slate-700">${esc(p.codice || '-')}</span> · prenotata il ${esc(dataOra(p.creata_il))} · quota ${euro(p.quota_cents)}</p>
+                    ${visita}${paga}${attesa}${rifiuto}${nota}
+                    <div data-msg hidden class="mt-3"></div>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="mt-3 text-xs text-slate-500">Codice <span class="font-mono font-semibold text-slate-700">${esc(p.codice || '-')}</span> · richiesta del ${esc(dataOra(p.creata_il))} · quota ${euro(p.quota_cents)}${p.pagata_il ? ' pagata' : ''}</p>
+                        ${annulla}
+                    </div>
                 </article>`;
             }).join('');
         }

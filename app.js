@@ -42,14 +42,14 @@ export async function quotaCents() {
 }
 
 export const STATI = {
-    in_attesa_pagamento: ['In attesa di pagamento', 'bg-slate-100 text-slate-600'],
-    pagata: ['Da prendere in carico', 'bg-amber-50 text-amber-600'],
-    presa_in_carico: ['Presa in carico', 'bg-skybrand-50 text-skybrand-700'],
-    visita_fissata: ['Visita fissata', 'bg-emerald-50 text-emerald-700'],
-    completata: ['Completata', 'bg-slate-100 text-slate-600'],
+    richiesta: ['Da confermare', 'bg-amber-50 text-amber-700'],
+    da_pagare: ['Confermata, quota da pagare', 'bg-skybrand-50 text-skybrand-700'],
+    confermata: ['Confermata', 'bg-emerald-50 text-emerald-700'],
+    completata: ['Svolta', 'bg-slate-100 text-slate-600'],
+    rifiutata: ['Rifiutata', 'bg-red-50 text-red-700'],
     annullata: ['Annullata', 'bg-red-50 text-red-700'],
-    rimborsata: ['Rimborsata', 'bg-red-50 text-red-700'],
-    scaduta: ['Pagamento non completato', 'bg-slate-100 text-slate-500'],
+    rimborsata: ['Annullata e rimborsata', 'bg-red-50 text-red-700'],
+    scaduta: ['Scaduta', 'bg-slate-100 text-slate-500'],
 };
 export function badgeStato(stato) {
     const [testo, classi] = STATI[stato] || [stato, 'bg-slate-100 text-slate-600'];
@@ -117,3 +117,64 @@ export function messaggio(el, testo, tipo = 'errore') {
     el.className = `rounded-xl border px-4 py-3 text-sm ${classi}`;
     el.innerHTML = Array.isArray(testo) ? `<ul class="list-disc pl-5 space-y-0.5">${testo.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : esc(testo);
 }
+
+// ---------------------------------------------------------------------
+// Orari della visita (sempre nel fuso orario italiano)
+// ---------------------------------------------------------------------
+const FMT_GIORNO = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short' });
+const FMT_ORA = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+const FMT_CHIAVE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' });
+const FMT_LUNGO = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+// es. "mercoledì 25 novembre 2026 alle ore 09:30"
+export const quando = (iso) => iso ? FMT_LUNGO.format(new Date(iso)) : '';
+
+export async function slotLiberi(prestazioneId, giorni = 28) {
+    const { data: righe, error } = await supabase.rpc('slot_liberi', {
+        p_prestazione: prestazioneId, p_dal: FMT_CHIAVE.format(new Date()), p_giorni: giorni,
+    });
+    if (error) throw new Error('Impossibile caricare gli orari disponibili');
+    return righe || [];
+}
+
+// Scelta di giorno e ora tra gli slot liberi; chiama onScegli(iso) quando si sceglie un orario
+export function selettoreSlot(el, slots, onScegli, iniziale = null) {
+    const perGiorno = new Map();
+    for (const s of slots) {
+        const k = FMT_CHIAVE.format(new Date(s.inizio));
+        if (!perGiorno.has(k)) perGiorno.set(k, []);
+        perGiorno.get(k).push(s);
+    }
+    const giorni = [...perGiorno.keys()];
+    let scelto = iniziale && slots.some((s) => new Date(s.inizio).getTime() === new Date(iniziale).getTime()) ? new Date(iniziale).toISOString() : null;
+    let giorno = scelto ? FMT_CHIAVE.format(new Date(scelto)) : giorni[0];
+    const disegna = () => {
+        if (!giorni.length) {
+            el.innerHTML = '<p class="text-sm text-slate-500">Nessun orario disponibile nelle prossime settimane per questa prestazione.</p>';
+            return;
+        }
+        const chip = (k) => {
+            const sel = k === giorno;
+            return `<button type="button" data-giorno="${k}" class="shrink-0 w-20 px-2 py-2 rounded-xl border text-xs text-center transition ${sel ? 'bg-skybrand-500 text-white border-transparent' : 'bg-white border-slate-200 text-slate-700 hover:border-skybrand-300'}">
+                <span class="block font-semibold capitalize">${esc(FMT_GIORNO.format(new Date(perGiorno.get(k)[0].inizio)))}</span>
+                <span class="block ${sel ? 'text-white/80' : 'text-slate-500'}">${perGiorno.get(k).length} liberi</span></button>`;
+        };
+        const ora = (s) => {
+            const iso = new Date(s.inizio).toISOString();
+            const sel = iso === scelto;
+            return `<button type="button" data-ora="${iso}" class="px-2 py-2.5 rounded-xl border text-sm font-semibold transition ${sel ? 'bg-skybrand-500 text-white border-transparent' : 'bg-white border-slate-200 text-slate-800 hover:border-skybrand-300'}">${FMT_ORA.format(new Date(s.inizio))}</button>`;
+        };
+        el.innerHTML = `
+            <div class="flex gap-2 overflow-x-auto pb-2">${giorni.map(chip).join('')}</div>
+            <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3">${perGiorno.get(giorno).map(ora).join('')}</div>`;
+    };
+    el.onclick = (e) => {
+        const b = e.target.closest('button');
+        if (!b || !el.contains(b)) return;
+        if (b.dataset.giorno) { giorno = b.dataset.giorno; disegna(); }
+        if (b.dataset.ora) { scelto = b.dataset.ora; disegna(); onScegli(scelto); }
+    };
+    disegna();
+}
+
+export const durata = (min) => min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}` : `${min} min`;
