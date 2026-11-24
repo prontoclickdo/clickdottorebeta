@@ -101,9 +101,9 @@
         mappa.getContainer().style.background = getComputedStyle(document.body).backgroundColor;
 
         // Tutto ciò che è fuori dall'Italia viene coperto con il colore di sfondo della pagina
-        // (San Marino e Vaticano, all'interno del contorno, restano visibili). Il contorno è allargato di circa 600 metri
+        // (San Marino e Vaticano, all'interno del contorno, restano visibili). Il contorno è allargato di circa 1,6 km
         // perché il disegno dei confini è semplificato e non deve tagliare coste e località di confine.
-        const MARGINE_GRADI = 0.0055;   // ~600 m in latitudine
+        const MARGINE_GRADI = 0.0145;   // ~1,6 km in latitudine
         function allarga(anello) {
             // area con segno (lng/lat): > 0 se l'anello è in senso antiorario
             let area = 0;
