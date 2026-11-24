@@ -97,7 +97,36 @@
         }).addTo(mappa);
         mappa.on('click', () => mappa.scrollWheelZoom.enable());   // la rotella zooma solo dopo un clic sulla mappa
 
-        // Tutto ciò che è fuori dall'Italia viene coperto (San Marino e Vaticano restano visibili)
+        // Tutto ciò che è fuori dall'Italia viene coperto con il colore di sfondo della pagina
+        // (San Marino e Vaticano, all'interno del contorno, restano visibili). Il contorno è allargato di circa 600 metri
+        // perché il disegno dei confini è semplificato e non deve tagliare coste e località di confine.
+        const MARGINE_GRADI = 0.0055;   // ~600 m in latitudine
+        function allarga(anello) {
+            // area con segno (lng/lat): > 0 se l'anello è in senso antiorario
+            let area = 0;
+            for (let i = 0; i < anello.length - 1; i++) area += anello[i][0] * anello[i + 1][1] - anello[i + 1][0] * anello[i][1];
+            const verso = area > 0 ? 1 : -1;
+            const punti = anello.slice(0, -1);
+            const n = punti.length;
+            const normale = (p, q) => {
+                const k = Math.cos(((p[1] + q[1]) / 2) * Math.PI / 180);
+                const dx = (q[0] - p[0]) * k, dy = q[1] - p[1];
+                const l = Math.hypot(dx, dy) || 1;
+                return [verso * dy / l, -verso * dx / l];
+            };
+            return punti.map((p, i) => {
+                const a = normale(punti[(i - 1 + n) % n], p), b = normale(p, punti[(i + 1) % n]);
+                let nx = a[0] + b[0], ny = a[1] + b[1];
+                const l = Math.hypot(nx, ny);
+                if (l < 1e-9) { nx = b[0]; ny = b[1]; } else { nx /= l; ny /= l; }
+                const coseno = Math.max(0.5, nx * b[0] + ny * b[1]);   // limita le punte sugli angoli stretti
+                const d = MARGINE_GRADI / coseno;
+                const k = Math.cos(p[1] * Math.PI / 180);
+                return [p[1] + ny * d, p[0] + (nx * d) / k];   // [lat, lng]
+            });
+        }
+        const coloreSfondo = () => getComputedStyle(document.body).backgroundColor || '#f8fafc';
+        let maschera = null;
         (async () => {
             try {
                 const [{ feature }, mondo] = await Promise.all([
@@ -106,17 +135,18 @@
                 ]);
                 const paesi = feature(mondo, mondo.objects.countries).features;
                 const contorni = [];
-                for (const f of paesi.filter((x) => ['380', '674', '336'].includes(String(x.id)))) {
+                for (const f of paesi.filter((x) => String(x.id) === '380')) {
                     const poligoni = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
-                    poligoni.forEach((p) => contorni.push(p[0].map(([lng, lat]) => [lat, lng])));
+                    poligoni.forEach((p) => contorni.push(allarga(p[0])));
                 }
                 if (!contorni.length) return;
-                const scuro = document.documentElement.classList.contains('dark');
-                L.polygon([[[-89, -179], [-89, 179], [89, 179], [89, -179]], ...contorni], {
-                    stroke: false, fillColor: scuro ? '#0b1220' : '#e2e8f0', fillOpacity: 0.92, interactive: false,
+                maschera = L.polygon([[[-89, -179], [-89, 179], [89, 179], [89, -179]], ...contorni], {
+                    stroke: false, fillColor: coloreSfondo(), fillOpacity: 1, interactive: false,
                 }).addTo(mappa);
                 L.polyline(contorni.map((c) => [...c, c[0]]), { color: '#2a71c8', weight: 1.5, opacity: 0.7, interactive: false }).addTo(mappa);
-            } catch (_) { /* senza la maschera la mappa resta comunque limitata all'Italia */ }
+                // se cambia il tema chiaro/scuro del dispositivo, la copertura segue il nuovo sfondo
+                matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTimeout(() => maschera?.setStyle({ fillColor: coloreSfondo() }), 50));
+            } catch (_) { /* senza la copertura la mappa resta comunque limitata all'Italia */ }
         })();
 
         const iconaHub = (attivo) => L.divIcon({ className: '', html: `<div class="hub-pin${attivo ? ' attivo' : ''}"><i class="fa-solid fa-building"></i></div>`, iconSize: [36, 36], iconAnchor: [18, 18], popupAnchor: [0, -18] });
