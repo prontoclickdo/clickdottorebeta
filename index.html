@@ -95,28 +95,21 @@
                 <a href="area-paziente.html" data-utente hidden class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 hover:border-skybrand-400 hover:text-skybrand-600 transition"><i class="fa-solid fa-user text-xs"></i> La mia area</a>
             </nav>
 
-            <!-- MENU MOBILE -->
+            <!-- Registrati / La mia area su smartphone e tablet -->
             <div class="flex items-center gap-2 shrink-0">
             <a href="registrati.html" data-ospite class="xl:hidden inline-flex items-center gap-1.5 px-3.5 h-11 rounded-xl bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold transition"><i class="fa-solid fa-user-plus text-xs"></i> Registrati</a>
             <a href="area-paziente.html" data-utente hidden class="xl:hidden inline-flex items-center gap-1.5 px-3.5 h-11 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:border-skybrand-400 transition"><i class="fa-solid fa-user text-xs"></i> La mia area</a>
-            <button type="button" id="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Apri il menu" aria-expanded="false" aria-controls="mobile-menu"
-                class="xl:hidden shrink-0 w-11 h-11 flex items-center justify-center rounded-xl border border-slate-300 text-slate-700 hover:border-skybrand-400 hover:text-skybrand-600 transition focus:outline-none focus:ring-2 focus:ring-skybrand-200">
-                <i class="fa-solid fa-bars text-lg"></i>
-            </button>
             </div>
         </div>
 
-        <div id="mobile-menu" class="hidden xl:hidden absolute left-0 right-0 top-full bg-white border-t border-slate-200 shadow-xl max-h-[calc(100dvh-5rem)] overflow-y-auto">
-            <div class="px-4 py-5 space-y-5">
-                <div class="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                    <a href="privacy.html" class="py-2 hover:text-skybrand-600 transition">Come trattiamo i tuoi dati?</a>
-                    <a href="#" onclick="return false;" class="py-2 hover:text-skybrand-600 transition">Lavora con noi</a>
-                    <a href="accedi.html" data-ospite class="py-2 hover:text-skybrand-600 transition"><i class="fa-solid fa-right-to-bracket text-xs mr-1.5"></i>Accedi</a>
-                    <a href="registrati.html" data-ospite class="py-2 hover:text-skybrand-600 transition"><i class="fa-solid fa-user-plus text-xs mr-1.5"></i>Registrati</a>
-                    <a href="area-paziente.html" data-utente hidden class="py-2 hover:text-skybrand-600 transition"><i class="fa-solid fa-user text-xs mr-1.5"></i>La mia area</a>
-                </div>
+        <!-- Su smartphone e tablet le voci del menu stanno in una seconda riga sempre visibile -->
+        <nav class="xl:hidden border-t border-slate-100">
+            <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-12 flex items-center justify-center gap-3 sm:gap-6 whitespace-nowrap text-xs sm:text-sm font-medium text-slate-700">
+                <a href="privacy.html" class="hover:text-skybrand-600 transition">Come trattiamo i tuoi dati?</a>
+                <a href="#" onclick="return false;" class="hover:text-skybrand-600 transition">Lavora con noi</a>
+                <a href="accedi.html" data-ospite class="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-skybrand-400 hover:text-skybrand-600 transition"><i class="fa-solid fa-right-to-bracket text-[10px] sm:text-xs"></i> Accedi</a>
             </div>
-        </div>
+        </nav>
     </header>
 
     <main class="flex-grow flex flex-col justify-center">
