@@ -101,9 +101,10 @@
         mappa.getContainer().style.background = getComputedStyle(document.body).backgroundColor;
 
         // Tutto ciò che è fuori dall'Italia viene coperto con il colore di sfondo della pagina
-        // (San Marino e Vaticano, all'interno del contorno, restano visibili). Il contorno è allargato di circa 3,6 km
+        // (San Marino e Vaticano, all'interno del contorno, restano visibili). Il contorno è allargato di circa 5,6 km
         // perché il disegno dei confini è semplificato e non deve tagliare coste e località di confine.
-        const MARGINE_GRADI = 0.0324;   // ~3,6 km in latitudine
+        const MARGINE_KM = 5.6;
+        const MARGINE_GRADI = MARGINE_KM / 111;   // usato solo se il calcolo preciso non è disponibile
         function allarga(anello) {
             // area con segno (lng/lat): > 0 se l'anello è in senso antiorario
             let area = 0;
@@ -132,14 +133,20 @@
         let maschera = null;
         (async () => {
             try {
-                const [{ feature }, mondo] = await Promise.all([
+                const [{ feature }, mondo, turf] = await Promise.all([
                     import('https://cdn.jsdelivr.net/npm/topojson-client@3/+esm'),
                     fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json').then((r) => r.json()),
+                    import('https://cdn.jsdelivr.net/npm/@turf/buffer@7/+esm').catch(() => null),
                 ]);
-                const paesi = feature(mondo, mondo.objects.countries).features;
+                const italia = feature(mondo, mondo.objects.countries).features.find((x) => String(x.id) === '380');
                 const contorni = [];
-                for (const f of paesi.filter((x) => String(x.id) === '380')) {
-                    const poligoni = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+                if (turf?.default) {
+                    // allargamento preciso: le aree che si sovrappongono (es. Stretto di Messina) diventano un unico contorno
+                    const g = turf.default(italia, MARGINE_KM, { units: 'kilometers' }).geometry;
+                    const poligoni = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+                    poligoni.forEach((p) => contorni.push(p[0].slice(0, -1).map(([lng, lat]) => [lat, lng])));
+                } else {
+                    const poligoni = italia.geometry.type === 'Polygon' ? [italia.geometry.coordinates] : italia.geometry.coordinates;
                     poligoni.forEach((p) => contorni.push(allarga(p[0])));
                 }
                 if (!contorni.length) return;
