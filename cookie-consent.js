@@ -64,45 +64,38 @@ html.dark #pcd-ck,html.dark #pcd-ck-modal{--bg:#0f172a;--fg:#e2e8f0;--mut:#94a3b
   function el(html) { var d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstChild; }
   function closeAll() { ['pcd-ck', 'pcd-ck-modal'].forEach(function (id) { var n = document.getElementById(id); if (n) n.remove(); }); }
 
-  function buttons(prefix) {
-    return '<button type="button" class="pcd-btn" data-a="reject">Rifiuta</button>' +
-           '<button type="button" class="pcd-btn" data-a="' + prefix + 'custom">Personalizza</button>' +
-           '<button type="button" class="pcd-btn" data-a="accept">Accetta tutti</button>';
-  }
-
+  // Il sito usa solo strumenti tecnici: la finestra informa, non chiede consensi.
+  // Se in futuro si aggiungeranno cookie statistici o di marketing, andranno ripristinate le scelte per categoria.
   function showBanner() {
     closeAll();
     var b = el('<div id="pcd-ck" role="dialog" aria-modal="false" aria-labelledby="pcd-t">' +
-      '<h2 id="pcd-t">Questo sito usa i cookie</h2>' +
-      '<p>Usiamo cookie tecnici, necessari al funzionamento del sito (accesso e prenotazioni). Con il tuo consenso possiamo usare anche cookie statistici e di marketing. Puoi accettare, rifiutare o scegliere per categoria; puoi cambiare idea in ogni momento. ' +
+      '<h2 id="pcd-t">Questo sito usa solo cookie tecnici</h2>' +
+      '<p>Usiamo soltanto cookie e strumenti tecnici, necessari al funzionamento del sito (accesso all\'account e prenotazioni). Non usiamo cookie statistici, di profilazione o di marketing. ' +
       '<a href="' + POLICY_URL + '">Informativa cookie</a></p>' +
-      '<div class="pcd-row">' + buttons('') + '</div></div>');
+      '<div class="pcd-row"><button type="button" class="pcd-btn" data-a="ok">Ho capito</button></div></div>');
     b.addEventListener('click', onAction);
     document.body.appendChild(b);
   }
 
   function showModal() {
     closeAll();
-    var c = read() || { statistics: false, marketing: false };
     var m = el('<div id="pcd-ck-modal" role="dialog" aria-modal="true" aria-labelledby="pcd-mt"><div class="pcd-box">' +
-      '<h2 id="pcd-mt">Preferenze cookie</h2>' +
-      '<p style="margin:0;font-size:13px;color:var(--mut)">Scegli quali categorie consentire. <a href="' + POLICY_URL + '">Informativa cookie</a></p>' +
-      '<div class="pcd-cat"><label for="pcd-n"><b>Necessari</b><span>Indispensabili per login, prenotazioni, sicurezza e per ricordare questa scelta. Sempre attivi.</span></label><input id="pcd-n" class="pcd-sw" type="checkbox" checked disabled></div>' +
-      '<div class="pcd-cat"><label for="pcd-s"><b>Statistiche</b><span>Ci aiutano a capire come viene usato il sito, in forma aggregata.</span></label><input id="pcd-s" class="pcd-sw" type="checkbox"' + (c.statistics ? ' checked' : '') + '></div>' +
-      '<div class="pcd-cat"><label for="pcd-m"><b>Marketing</b><span>Servono a mostrare contenuti o annunci pertinenti.</span></label><input id="pcd-m" class="pcd-sw" type="checkbox"' + (c.marketing ? ' checked' : '') + '></div>' +
-      '<div class="pcd-row"><button type="button" class="pcd-btn" data-a="reject">Rifiuta</button>' +
-      '<button type="button" class="pcd-btn" data-a="savecustom">Salva scelte</button>' +
-      '<button type="button" class="pcd-btn" data-a="accept">Accetta tutti</button></div></div></div>');
+      '<h2 id="pcd-mt">Cookie del sito</h2>' +
+      '<p style="margin:0;font-size:13px;color:var(--mut)">Il sito usa solo cookie tecnici, che non richiedono il consenso. <a href="' + POLICY_URL + '">Informativa cookie</a></p>' +
+      '<div class="pcd-cat"><label for="pcd-n"><b>Necessari</b><span>Indispensabili per l\'accesso all\'account, le prenotazioni, la sicurezza e per ricordare la chiusura di questa finestra. Sempre attivi.</span></label><input id="pcd-n" class="pcd-sw" type="checkbox" checked disabled></div>' +
+      '<div class="pcd-cat"><label><b>Statistici e di marketing</b><span>Non utilizzati su questo sito.</span></label></div>' +
+      '<div class="pcd-row"><button type="button" class="pcd-btn" data-a="ok">Chiudi</button></div></div></div>');
     m.addEventListener('click', onAction);
-    m.addEventListener('keydown', function (e) { if (e.key === 'Escape' && read()) closeAll(); });
+    m.addEventListener('keydown', function (e) { if (e.key === 'Escape') { save(false, false); closeAll(); } });
     document.body.appendChild(m);
-    m.querySelector('#pcd-s').focus();
+    m.querySelector('[data-a="ok"]').focus();
   }
 
   function onAction(e) {
     var a = e.target.getAttribute && e.target.getAttribute('data-a');
     if (!a) return;
-    if (a === 'accept') { save(true, true); closeAll(); }
+    if (a === 'ok') { save(false, false); closeAll(); }
+    else if (a === 'accept') { save(true, true); closeAll(); }
     else if (a === 'reject') { save(false, false); closeAll(); }
     else if (a === 'custom') showModal();
     else if (a === 'savecustom') {
