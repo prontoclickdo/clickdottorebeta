@@ -16,6 +16,7 @@
 //   POST /api/recupero-password       link per reimpostare la password
 //   POST /api/registrati              registrazione del paziente (email di conferma)
 //   POST /api/aggiorna-profilo        il paziente aggiorna i propri dati
+//   POST /api/promemoria              promemoria al paziente il giorno prima della visita (chiamato ogni ora da pg_cron)
 //
 // Segreti richiesti (Edge Functions > Secrets):
 //   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY
@@ -1168,6 +1169,31 @@ async function registrati(req: Request) {
   return rispostaNeutra;
 }
 
+// Promemoria il giorno prima della visita. Chiamato ogni ora da pg_cron: la funzione del database
+// "prenotazioni_da_ricordare" segna e restituisce una sola volta le visite confermate di domani (dalle 9 in poi).
+async function promemoria(req: Request) {
+  const { data: righe, error } = await db.rpc("prenotazioni_da_ricordare");
+  if (error) { console.error(error); throw new HttpError(500, "Promemoria non disponibili"); }
+  let inviati = 0;
+  for (const r of righe ?? []) {
+    try {
+      const p = await caricaPrenotazione(r.id);
+      const daPagare = p.canale === "hub" && !p.pagata_il
+        ? `<p>La quota di prenotazione di ${euro(p.quota_cents)} risulta ancora da pagare: puoi saldarla presso ${esc(p.hub?.nome ?? "la struttura")}${p.token_pagamento ? ` oppure <a href="${SITE}/paga.html?t=${p.token_pagamento}" style="color:#0284c7">online con il bollettino</a>` : ""}.</p>`
+        : "";
+      await inviaEmail(p.paziente_email, `Promemoria: domani la tua visita ${p.codice}`, layoutEmail("Domani hai una visita", `
+        <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>ti ricordiamo l'appuntamento di domani.</p>
+        ${boxCodice(p.codice)}
+        ${tabellaVisita(p)}
+        ${daPagare}
+        <p>Ti consigliamo di arrivare qualche minuto prima e di portare con te un documento, la tessera sanitaria ed eventuali esami precedenti.</p>
+        <p style="color:#64748b;font-size:13px">Se non puoi presentarti avvisa il medico il prima possibile. Mancando meno di 48 ore alla visita, in caso di annullamento la quota di prenotazione non è rimborsabile.</p>`));
+      inviati++;
+    } catch (e) { console.error("Promemoria non inviato", r.id, e); }
+  }
+  return json(req, { inviati });
+}
+
 async function aggiornaProfilo(req: Request) {
   const id = await pazienteDaToken(req);
   if (!id) throw new HttpError(401, "Accedi di nuovo per modificare i tuoi dati");
@@ -1207,6 +1233,7 @@ Deno.serve(async (req: Request) => {
       case "recupero-password": return await recuperoPassword(req);
       case "registrati": return await registrati(req);
       case "aggiorna-profilo": return await aggiornaProfilo(req);
+      case "promemoria": return await promemoria(req);
       default: throw new HttpError(404, "Percorso sconosciuto");
     }
   } catch (e) {
