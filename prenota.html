@@ -78,7 +78,7 @@
             <!-- Richiesta del paziente -->
             <form id="modulo" hidden novalidate class="space-y-5">
                 <div class="rounded-xl border px-4 py-3 text-sm bg-skybrand-50 border-skybrand-200 text-slate-700">
-                    <i class="fa-solid fa-circle-info mr-1.5 text-skybrand-500"></i>Scegli prestazione e orario: la richiesta arriva al medico, che la conferma o la rifiuta.
+                    <i class="fa-solid fa-circle-info mr-1.5 text-skybrand-500"></i>Scegli prestazione e orario: la richiesta arriva al medico, che la conferma o la rifiuta entro 48 ore.
                     Solo dopo la conferma paghi la quota di prenotazione<span id="quota-info"></span>, entro 24 ore.
                 </div>
                 <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
@@ -101,7 +101,7 @@
 
                 <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-3 text-sm text-slate-700">
                     <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">4 · Consensi</h2>
-                    <label class="flex items-start gap-3"><input type="checkbox" name="consenso_privacy" class="mt-1 w-4 h-4 shrink-0"> <span>Ho letto l'<a href="#" class="text-skybrand-600 underline">informativa privacy</a> e accetto i <a href="#" class="text-skybrand-600 underline">termini del servizio</a>, compresa la politica di rimborso.</span></label>
+                    <label class="flex items-start gap-3"><input type="checkbox" name="consenso_privacy" class="mt-1 w-4 h-4 shrink-0"> <span>Ho letto l'<a href="#" class="text-skybrand-600 underline">informativa privacy</a> e accetto i <a href="#" class="text-skybrand-600 underline">termini del servizio</a>, compresa la politica di rimborso: la quota si rimborsa solo se annullo almeno 48 ore prima della visita.</span></label>
                     <label class="flex items-start gap-3"><input type="checkbox" name="consenso_dati_sanitari" class="mt-1 w-4 h-4 shrink-0"> <span>Acconsento al trattamento dei dati relativi alla salute, necessario per organizzare la visita con il medico scelto.</span></label>
                 </section>
 
@@ -116,7 +116,8 @@
                 <dl id="riepilogo-dati" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm"></dl>
                 <div class="rounded-xl bg-skybrand-50 border border-skybrand-200 p-4 text-sm text-slate-700">
                     Adesso non paghi nulla. Se il medico conferma riceverai un'email e avrai <strong>24 ore</strong> per pagare la quota di prenotazione<span id="riepilogo-quota"></span> dalla tua area personale.
-                    <span class="block text-xs text-slate-500 mt-1">Il costo della visita si paga al medico.</span>
+                    <span class="block text-xs text-slate-500 mt-1">Il costo della visita si paga al medico. Il medico ha 48 ore per confermare la richiesta.</span>
+                    <span class="block text-xs text-slate-500 mt-1"><strong>Rimborso:</strong> se cambi idea, la quota ti viene rimborsata solo se annulli almeno 48 ore prima della visita; dopo non è rimborsabile.</span>
                 </div>
                 <div id="errori-invio" hidden></div>
                 <div class="flex flex-col sm:flex-row gap-3">

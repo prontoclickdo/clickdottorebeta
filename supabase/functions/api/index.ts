@@ -311,8 +311,14 @@ function erroreInserimento(error: any): never {
   throw new HttpError(500, "Impossibile registrare la prenotazione");
 }
 
-// Il medico ha tempo fino a 48 ore (e comunque fino a un'ora prima della visita) per rispondere
+// Il medico deve confermare entro 48 ore dal ricevimento della richiesta (e comunque entro un'ora prima della visita)
 const scadenzaRisposta = (inizio: Date) => minimo(new Date(Date.now() + 48 * ORA), new Date(inizio.getTime() - ORA));
+
+// Politica di rimborso: se il paziente ci ripensa, il ticket si rimborsa solo con almeno 48 ore di preavviso
+const PREAVVISO_RIMBORSO = 48 * ORA;
+// deno-lint-ignore no-explicit-any
+const rimborsabile = (p: any) => !!p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= PREAVVISO_RIMBORSO;
+const TESTO_POLITICA = "Puoi annullare dalla tua area personale: il ticket viene rimborsato solo se annulli almeno 48 ore prima della visita, altrimenti non è rimborsabile.";
 
 // ---------------------------------------------------------------------
 // Email legate alle prenotazioni (nelle email al medico nessun dato del paziente)
@@ -340,7 +346,8 @@ async function avvisaMedicoRichiesta(p: Pren) {
       <p>Gentile ${esc(nomeMedico(p))},<br>${chi} di prenotare la prestazione <strong>${esc(p.prestazione.nome)}</strong>
       per <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
       ${boxCodice(p.codice)}
-      <p>Accedi alla tua area riservata per vedere i dati del paziente e <strong>confermare o rifiutare</strong> la richiesta${p.scadenza ? ` entro ${esc(dataOra(p.scadenza))}` : ""}.
+      <p>Accedi alla tua area riservata per vedere i dati del paziente e <strong>confermare o rifiutare</strong> la richiesta
+      entro 48 ore dal ricevimento${p.scadenza ? `, cioè entro <strong>${esc(dataOra(p.scadenza))}</strong>` : ""}.
       Se non rispondi entro questo termine la richiesta scade e l'orario torna libero.</p>
       ${pulsanteEmail(`${SITE}/area.html`, "Conferma o rifiuta")}`));
 }
@@ -363,6 +370,7 @@ async function avvisaPazienteDaPagare(p: Pren) {
       ${tabellaVisita(p)}
       <p>Per confermare definitivamente la prenotazione paga la quota di <strong>${euro(p.quota_cents)}</strong>
       entro <strong>${esc(dataOra(p.scadenza))}</strong>. Se non paghi entro questo termine l'orario torna disponibile per altri pazienti.</p>
+      <p style="color:#64748b;font-size:13px">${esc(TESTO_POLITICA)}</p>
       ${pulsanteEmail(`${SITE}/area-paziente.html`, `Paga ${euro(p.quota_cents)} e conferma`)}`));
 }
 
@@ -391,7 +399,8 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
     <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>la tua visita è confermata${p.canale === "hub" ? ` (prenotata presso ${esc(p.hub?.nome ?? "la struttura")})` : ""}.</p>
     ${boxCodice(p.codice)}
     ${tabellaVisita(p, quota)}
-    <p>Conserva il codice: ti servirà per qualsiasi comunicazione. Se non puoi presentarti, avvisa il prima possibile.</p>`));
+    <p>Conserva il codice: ti servirà per qualsiasi comunicazione. Se non puoi presentarti, avvisa il prima possibile.</p>
+    <p style="color:#64748b;font-size:13px">${p.canale === "online" ? esc(TESTO_POLITICA) : `Il ticket viene rimborsato solo se annulli almeno 48 ore prima della visita, rivolgendoti a ${esc(p.hub?.nome ?? "la struttura")}; altrimenti non è rimborsabile.`}</p>`));
   if (opzioni.medico) {
     await inviaEmail(p.medico.email, `Visita confermata ${p.codice}: ${dataOra(p.visita_il)}`, layoutEmail("Visita confermata", `
       <p>Gentile ${esc(nomeMedico(p))},<br>è confermata la visita per <strong>${esc(p.prestazione.nome)}</strong>
@@ -571,6 +580,52 @@ async function paga(req: Request) {
   return json(req, { url });
 }
 
+// Annulla applicando la politica di rimborso.
+//   causa "paziente": ripensamento del paziente -> rimborso solo con almeno 48 ore di preavviso
+//   causa "struttura": il medico o la struttura non possono erogare la visita -> rimborso
+type EsitoRimborso = "nessun_pagamento" | "stripe" | "hub" | "trattenuta";
+async function eseguiAnnullamento(p: Pren, causa: "paziente" | "struttura", motivo: string | null, utenteId: string | null): Promise<EsitoRimborso> {
+  let esito: EsitoRimborso;
+  if (!p.pagata_il) esito = "nessun_pagamento";
+  else if (causa === "paziente" && !rimborsabile(p)) esito = "trattenuta";
+  else if (p.incassata_da === "click_dottore" && p.stripe_payment_intent) esito = "stripe";
+  else esito = "hub";
+  if (esito === "stripe") {
+    await stripe("POST", "refunds", { payment_intent: p.stripe_payment_intent, metadata: { prenotazione_id: p.id } });
+  }
+  const { error } = await db.from("prenotazioni").update({
+    stato: esito === "stripe" ? "rimborsata" : "annullata", scadenza: null,
+    quota_trattenuta: esito === "trattenuta", nota_medico: motivo ?? p.nota_medico, aggiornata_il: new Date().toISOString(),
+  }).eq("id", p.id);
+  if (error) { console.error(error); throw new HttpError(500, "Annullamento non riuscito"); }
+  await registra(utenteId, "annulla", p.id, { causa, esito });
+  return esito;
+}
+
+function testoRimborso(p: Pren, esito: EsitoRimborso): string {
+  switch (esito) {
+    case "nessun_pagamento": return "Non ti è stato addebitato nulla.";
+    case "stripe": return `La quota di ${euro(p.quota_cents)} ti verrà rimborsata sulla carta usata per il pagamento entro alcuni giorni lavorativi.`;
+    case "hub": return `Per il rimborso della quota di ${euro(p.quota_cents)} rivolgiti a ${esc(p.hub?.nome ?? "la struttura")} presso cui hai prenotato.`;
+    default: return `L'annullamento è avvenuto a meno di 48 ore dalla visita: come previsto dalle condizioni di prenotazione, la quota di ${euro(p.quota_cents)} non è rimborsabile.`;
+  }
+}
+
+async function avvisaAnnullamento(p: Pren, esito: EsitoRimborso, motivo: string | null, opzioni: { paziente: boolean; medico: boolean; daPaziente?: boolean }) {
+  if (opzioni.paziente) {
+    await inviaEmail(p.paziente_email, `Prenotazione annullata ${p.codice}`, layoutEmail("La tua prenotazione è stata annullata", `
+      <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>la prenotazione per <strong>${esc(p.prestazione.nome)}</strong>
+      con ${esc(nomeMedico(p))} del ${esc(dataOra(p.visita_il))} è stata annullata${opzioni.daPaziente ? " su tua richiesta" : ""}.</p>
+      ${boxCodice(p.codice)}${motivo ? `<p>Motivo: ${esc(motivo)}</p>` : ""}<p>${testoRimborso(p, esito)}</p>`));
+  }
+  if (opzioni.medico) {
+    await inviaEmail(p.medico.email, `Prenotazione annullata ${p.codice}`, layoutEmail("Prenotazione annullata", `
+      <p>Gentile ${esc(nomeMedico(p))},<br>la ${p.stato === "richiesta" ? "richiesta" : "prenotazione"} per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))}
+      è stata annullata${opzioni.daPaziente ? " dal paziente" : p.canale === "hub" ? ` da ${esc(p.hub?.nome ?? "l'hub")}` : ""}. L'orario è di nuovo disponibile.</p>${boxCodice(p.codice)}`));
+  }
+}
+
+// Il paziente annulla dalla sua area (richiesta, quota da pagare o visita confermata)
 async function annullaRichiestaPaziente(req: Request) {
   const paziente_id = await pazienteDaToken(req);
   if (!paziente_id) throw new HttpError(401, "Accedi di nuovo per annullare");
@@ -578,15 +633,14 @@ async function annullaRichiestaPaziente(req: Request) {
   const id = uuid(body.id, "prenotazione");
   const p = await caricaPrenotazione(id);
   if (p.paziente_id !== paziente_id) throw new HttpError(404, "Prenotazione non trovata");
-  if (!["richiesta", "da_pagare"].includes(p.stato) || p.pagata_il) {
-    throw new HttpError(409, "Questa prenotazione non si può più annullare da qui: contatta il medico");
+  if (!["richiesta", "da_pagare", "confermata"].includes(p.stato)) throw new HttpError(409, "Questa prenotazione è già chiusa");
+  if (p.visita_il && new Date(p.visita_il).getTime() < Date.now()) throw new HttpError(409, "La visita è già passata");
+  if (p.pagata_il && !rimborsabile(p) && body.senza_rimborso !== true) {
+    throw new HttpError(409, "Mancano meno di 48 ore alla visita: annullando, la quota non sarà rimborsata. Conferma per procedere.");
   }
-  await db.from("prenotazioni").update({ stato: "annullata", scadenza: null, aggiornata_il: new Date().toISOString() }).eq("id", id);
-  await registra(paziente_id, "annullata_dal_paziente", id);
-  await inviaEmail(p.medico.email, `Richiesta ritirata ${p.codice}`, layoutEmail("Il paziente ha ritirato la richiesta", `
-    <p>Gentile ${esc(nomeMedico(p))},<br>la richiesta per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))} è stata annullata dal paziente.
-    L'orario è di nuovo disponibile.</p>${boxCodice(p.codice)}`));
-  return json(req, { ok: true });
+  const esito = await eseguiAnnullamento(p, "paziente", null, paziente_id);
+  await avvisaAnnullamento(p, esito, null, { paziente: !!p.pagata_il, medico: true, daPaziente: true });
+  return json(req, { ok: true, esito });
 }
 
 // ---------------------------------------------------------------------
@@ -723,27 +777,13 @@ async function aggiornaPrenotazione(req: Request) {
     case "annulla": {
       if (!["richiesta", "da_pagare", "confermata"].includes(p.stato)) throw new HttpError(409, "La prenotazione è già chiusa");
       const motivo = testo(body.nota, "motivo", 500, false) || null;
-      let nuovoStato = "annullata";
-      if (p.pagata_il && p.stripe_payment_intent) {
-        await stripe("POST", "refunds", { payment_intent: p.stripe_payment_intent, metadata: { prenotazione_id: id } });
-        nuovoStato = "rimborsata";
-      }
-      await aggiorna({ stato: nuovoStato, scadenza: null, nota_medico: motivo ?? p.nota_medico });
-      const rimborso = !p.pagata_il ? "Non ti è stato addebitato nulla."
-        : nuovoStato === "rimborsata" ? `La quota di ${euro(p.quota_cents)} ti verrà rimborsata sulla carta usata per il pagamento entro alcuni giorni lavorativi.`
-        : `Per il rimborso della quota rivolgiti a ${esc(p.hub?.nome ?? "la struttura")} presso cui hai prenotato.`;
-      if (p.canale === "online" || p.stato === "confermata") {
-        await inviaEmail(p.paziente_email, `Prenotazione annullata ${p.codice}`, layoutEmail("La tua prenotazione è stata annullata", `
-          <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>la prenotazione per <strong>${esc(p.prestazione.nome)}</strong>
-          con ${esc(nomeMedico(p))} del ${esc(dataOra(p.visita_il))} è stata annullata.</p>
-          ${boxCodice(p.codice)}${motivo ? `<p>Motivo: ${esc(motivo)}</p>` : ""}<p>${rimborso}</p>`));
-      }
-      if (!eMedico) {
-        await inviaEmail(p.medico.email, `Prenotazione annullata ${p.codice}`, layoutEmail("Prenotazione annullata", `
-          <p>Gentile ${esc(nomeMedico(p))},<br>la prenotazione per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))}
-          è stata annullata${p.canale === "hub" ? ` da ${esc(p.hub?.nome ?? "l'hub")}` : ""}. L'orario è di nuovo disponibile.</p>${boxCodice(p.codice)}`));
-      }
-      break;
+      // "paziente" = ripensamento del paziente (rimborso solo con 48 ore di preavviso); altrimenti la visita salta per il medico o la struttura
+      const causa = body.causa === "paziente" ? "paziente" : "struttura";
+      const esito = await eseguiAnnullamento(p, causa, motivo, io.id);
+      await avvisaAnnullamento(p, esito, motivo, {
+        paziente: p.canale === "online" || p.stato === "confermata", medico: !eMedico, daPaziente: causa === "paziente",
+      });
+      return json(req, { ok: true, esito });
     }
     case "registra_incasso": {
       if (!eAdmin && !eHub) throw new HttpError(403, "Solo l'hub registra gli incassi");
@@ -772,6 +812,7 @@ async function aggiornaPrenotazione(req: Request) {
       if (p.canale !== "hub") throw new HttpError(400, "I rimborsi online sono automatici");
       if (!eAdmin && !eHub) throw new HttpError(403, "Solo l'hub può segnare il rimborso");
       if (p.stato !== "annullata" || p.incassata_da !== "hub") throw new HttpError(409, "Non c'è una quota incassata da rimborsare");
+      if (p.quota_trattenuta) throw new HttpError(409, "Annullata a meno di 48 ore dalla visita su richiesta del paziente: la quota non è rimborsabile");
       await aggiorna({ stato: "rimborsata" });
       break;
     }

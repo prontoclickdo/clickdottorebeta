@@ -117,7 +117,9 @@
             const box = b.closest('article').querySelector('[data-msg]');
             if (b.dataset.annulla && b.dataset.confermato !== '1') {
                 b.dataset.confermato = '1';
-                b.textContent = 'Clicca di nuovo per annullare';
+                b.textContent = !b.dataset.pagata ? 'Clicca di nuovo per annullare'
+                    : b.dataset.rimborso ? 'Clicca di nuovo per annullare: la quota ti verrà rimborsata'
+                    : 'Meno di 48 ore alla visita: la quota NON sarà rimborsata. Clicca di nuovo per annullare comunque';
                 return;
             }
             b.disabled = true;
@@ -127,7 +129,7 @@
                     location.href = url;
                     return;
                 }
-                await api('annulla-richiesta', { dati: { id: b.dataset.annulla }, conAccesso: true });
+                await api('annulla-richiesta', { dati: { id: b.dataset.annulla, senza_rimborso: !b.dataset.rimborso }, conAccesso: true });
                 await caricaPrenotazioni();
             } catch (err) {
                 box.hidden = false;
@@ -213,8 +215,13 @@
                 const attesa = p.stato === 'richiesta' ? `<p class="mt-2 text-xs text-slate-500">Il medico deve rispondere entro ${esc(quando(p.scadenza))}. Ti avviseremo via email.</p>` : '';
                 const rifiuto = p.motivo_rifiuto ? `<p class="mt-2 text-sm text-slate-600"><span class="text-slate-400">Motivo:</span> ${esc(p.motivo_rifiuto)}</p>` : '';
                 const nota = p.nota_medico ? `<p class="mt-2 text-sm text-slate-600"><span class="text-slate-400">Nota:</span> ${esc(p.nota_medico)}</p>` : '';
-                const annulla = ['richiesta', 'da_pagare'].includes(p.stato) && !p.pagata_il
-                    ? `<button type="button" data-annulla="${p.id}" class="mt-3 text-sm text-red-700 hover:text-red-800 font-medium">Annulla la richiesta</button>` : '';
+                const futura = p.visita_il && new Date(p.visita_il).getTime() > Date.now();
+                const conRimborso = p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= 48 * 3600 * 1000;
+                const annullabile = futura && (['richiesta', 'da_pagare'].includes(p.stato) || p.stato === 'confermata');
+                const annulla = annullabile
+                    ? `<button type="button" data-annulla="${p.id}" data-pagata="${p.pagata_il ? '1' : ''}" data-rimborso="${conRimborso ? '1' : ''}" class="mt-3 text-sm text-red-700 hover:text-red-800 font-medium">${p.stato === 'confermata' ? 'Annulla la prenotazione' : 'Annulla la richiesta'}</button>` : '';
+                const politica = p.stato === 'confermata' && p.pagata_il && futura
+                    ? `<p class="mt-2 text-xs text-slate-500">${conRimborso ? `Se annulli entro ${esc(quando(new Date(new Date(p.visita_il).getTime() - 48 * 3600 * 1000).toISOString()))} la quota ti viene rimborsata.` : 'Mancano meno di 48 ore alla visita: in caso di annullamento la quota non è rimborsabile.'}</p>` : '';
                 return `
                 <article class="bg-white border border-slate-200 rounded-2xl p-5">
                     <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
@@ -224,7 +231,7 @@
                         </div>
                         <div class="shrink-0">${badge(p.stato)}</div>
                     </div>
-                    ${visita}${paga}${attesa}${rifiuto}${nota}
+                    ${visita}${paga}${attesa}${rifiuto}${nota}${politica}
                     <div data-msg hidden class="mt-3"></div>
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <p class="mt-3 text-xs text-slate-500">Codice <span class="font-mono font-semibold text-slate-700">${esc(p.codice || '-')}</span> · richiesta del ${esc(dataOra(p.creata_il))} · quota ${euro(p.quota_cents)}${p.pagata_il ? ' pagata' : ''}</p>

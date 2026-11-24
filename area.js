@@ -289,6 +289,7 @@ function apriPannello(id) {
         : `${euro(p.quota_cents)} da pagare`;
     const ripartizione = p.canale === 'hub' ? `hub ${euro(p.quota_hub_cents)} · Click Dottore ${euro(p.quota_cents - p.quota_hub_cents)}` : '';
     const visitaPassata = p.visita_il && new Date(p.visita_il).getTime() < Date.now();
+    const conRimborso = p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= 48 * 3600 * 1000;
 
     $('pannello-corpo').innerHTML = `
         <div class="flex items-start justify-between gap-3">
@@ -318,7 +319,7 @@ function apriPannello(id) {
             ${comeMedico && p.stato === 'richiesta' ? `
                 <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
                     <div class="text-sm font-semibold text-amber-900">Richiesta da confermare</div>
-                    <p class="text-xs text-amber-900/80">${p.canale === 'online' ? 'Se confermi, il paziente riceve un\'email e ha 24 ore per pagare la quota: poi la visita è definitiva.' : 'Se confermi, la visita è definitiva e l\'hub viene avvisato.'}</p>
+                    <p class="text-xs text-amber-900/80">Va confermata entro 48 ore dal ricevimento. ${p.canale === 'online' ? 'Se confermi, il paziente riceve un\'email e ha 24 ore per pagare la quota: poi la visita è definitiva.' : 'Se confermi, la visita è definitiva e l\'hub viene avvisato.'}</p>
                     <button type="button" data-azione="conferma" class="${btnPrimario} w-full"><i class="fa-solid fa-check mr-1"></i> Conferma la visita</button>
                     <textarea data-motivo-rifiuto rows="2" maxlength="500" placeholder="Motivo del rifiuto (facoltativo, viene comunicato)" class="${classeCampo}"></textarea>
                     <button type="button" data-azione="rifiuta" class="${btnPericolo} w-full">Rifiuta la richiesta</button>
@@ -339,10 +340,16 @@ function apriPannello(id) {
             ${(comeMedico || comeHub) && attiva ? `
                 <div class="rounded-xl border border-red-200 p-4 space-y-3">
                     <div class="text-sm font-semibold text-red-700">Annulla la prenotazione</div>
+                    <select data-causa class="${classeCampo}">
+                        <option value="struttura">${comeMedico && !comeHub ? 'Non posso effettuare la visita' : 'Il medico o la struttura non possono effettuare la visita'} (quota rimborsata)</option>
+                        <option value="paziente">Ripensamento del paziente (${conRimborso ? 'quota rimborsata: mancano almeno 48 ore' : 'quota NON rimborsabile: mancano meno di 48 ore'})</option>
+                    </select>
                     <textarea data-motivo rows="2" maxlength="500" placeholder="Motivo (viene comunicato al paziente)" class="${classeCampo}"></textarea>
-                    <button type="button" data-azione="annulla" class="${btnPericolo} w-full">${p.pagata_il && p.incassata_da === 'click_dottore' ? 'Annulla e rimborsa la quota' : 'Annulla la prenotazione'}</button>
+                    <button type="button" data-azione="annulla" class="${btnPericolo} w-full">Annulla la prenotazione</button>
+                    ${p.pagata_il ? `<p class="text-xs text-slate-500">${p.incassata_da === 'click_dottore' ? 'Se la quota va rimborsata, il rimborso sulla carta è automatico.' : 'Se la quota va rimborsata, restituiscila al paziente e poi segnala come rimborsata.'}</p>` : ''}
                 </div>` : ''}
-            ${comeHub && p.canale === 'hub' && p.stato === 'annullata' && p.incassata_da === 'hub' ? `<button type="button" data-azione="segna_rimborsata" class="${btnSecondario} w-full">Segna la quota come rimborsata al paziente</button>` : ''}
+            ${p.quota_trattenuta ? `<p class="text-sm text-slate-600 rounded-xl bg-slate-50 border border-slate-200 p-3">Annullata dal paziente a meno di 48 ore dalla visita: la quota non è rimborsabile.</p>` : ''}
+            ${comeHub && p.canale === 'hub' && p.stato === 'annullata' && p.incassata_da === 'hub' && !p.quota_trattenuta ? `<button type="button" data-azione="segna_rimborsata" class="${btnSecondario} w-full">Segna la quota come rimborsata al paziente</button>` : ''}
             <button type="button" onclick="window.print()" class="${btnSecondario} w-full"><i class="fa-solid fa-print mr-1"></i> Stampa</button>
         </div>`;
     $('pannello').hidden = false;
@@ -939,7 +946,7 @@ document.addEventListener('click', async (e) => {
     if (t.dataset.azione) {
         const corpo = $('pannello-corpo');
         const extra = {};
-        if (t.dataset.azione === 'annulla') extra.nota = corpo.querySelector('[data-motivo]')?.value;
+        if (t.dataset.azione === 'annulla') { extra.nota = corpo.querySelector('[data-motivo]')?.value; extra.causa = corpo.querySelector('[data-causa]')?.value; }
         if (t.dataset.azione === 'rifiuta') extra.nota = corpo.querySelector('[data-motivo-rifiuto]')?.value;
         if (t.dataset.azione === 'registra_incasso') {
             extra.metodo_pagamento = corpo.querySelector('[data-metodo]')?.value;
