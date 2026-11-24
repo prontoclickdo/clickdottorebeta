@@ -87,12 +87,37 @@
 
         // ---------------- Mappa ----------------
         const ITALIA = [[35.4, 6.6], [47.1, 18.6]];
-        const mappa = L.map('mappa', { scrollWheelZoom: false }).fitBounds(ITALIA);
+        // la mappa resta sull'Italia: non si può spostare né allontanare oltre i confini
+        const mappa = L.map('mappa', {
+            scrollWheelZoom: false, minZoom: 5, maxBounds: L.latLngBounds(ITALIA).pad(0.15), maxBoundsViscosity: 1,
+        }).fitBounds(ITALIA);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 18,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
         }).addTo(mappa);
         mappa.on('click', () => mappa.scrollWheelZoom.enable());   // la rotella zooma solo dopo un clic sulla mappa
+
+        // Tutto ciò che è fuori dall'Italia viene coperto (San Marino e Vaticano restano visibili)
+        (async () => {
+            try {
+                const [{ feature }, mondo] = await Promise.all([
+                    import('https://cdn.jsdelivr.net/npm/topojson-client@3/+esm'),
+                    fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json').then((r) => r.json()),
+                ]);
+                const paesi = feature(mondo, mondo.objects.countries).features;
+                const contorni = [];
+                for (const f of paesi.filter((x) => ['380', '674', '336'].includes(String(x.id)))) {
+                    const poligoni = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+                    poligoni.forEach((p) => contorni.push(p[0].map(([lng, lat]) => [lat, lng])));
+                }
+                if (!contorni.length) return;
+                const scuro = document.documentElement.classList.contains('dark');
+                L.polygon([[[-89, -179], [-89, 179], [89, 179], [89, -179]], ...contorni], {
+                    stroke: false, fillColor: scuro ? '#0b1220' : '#e2e8f0', fillOpacity: 0.92, interactive: false,
+                }).addTo(mappa);
+                L.polyline(contorni.map((c) => [...c, c[0]]), { color: '#2a71c8', weight: 1.5, opacity: 0.7, interactive: false }).addTo(mappa);
+            } catch (_) { /* senza la maschera la mappa resta comunque limitata all'Italia */ }
+        })();
 
         const iconaHub = (attivo) => L.divIcon({ className: '', html: `<div class="hub-pin${attivo ? ' attivo' : ''}"><i class="fa-solid fa-building"></i></div>`, iconSize: [36, 36], iconAnchor: [18, 18], popupAnchor: [0, -18] });
         const iconaLuogo = L.divIcon({ className: '', html: '<div class="luogo-pin"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
