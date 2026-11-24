@@ -8,7 +8,7 @@
 (function () {
   'use strict';
   var KEY = 'pcd_cookie_consent', VERSION = 1, MONTHS = 6;
-  var POLICY_URL = 'cookie-policy.html'; // <-- cambia con la tua pagina di informativa cookie
+  var POLICY_URL = 'privacy.html#cookie'; // informativa privacy, sezione cookie
 
   function read() {
     try {
