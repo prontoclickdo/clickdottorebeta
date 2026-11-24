@@ -25,8 +25,9 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const SITE = (Deno.env.get("SITE_URL") ?? "https://clickdottore.it").replace(/\/$/, "");
-const ALLOWED_ORIGINS = [SITE, SITE.replace("https://", "https://www.")];
+const SITE = (Deno.env.get("SITE_URL") ?? "https://www.clickdottore.it").replace(/\/$/, "");
+// il sito risponde su www.clickdottore.it; clickdottore.it reindirizza lì
+const ALLOWED_ORIGINS = [SITE, "https://www.clickdottore.it", "https://clickdottore.it"];
 const EMAIL_FROM = Deno.env.get("EMAIL_FROM") ?? "Click Dottore <prenotazioni@clickdottore.it>";
 const EMAIL_REPLY_TO = Deno.env.get("EMAIL_REPLY_TO") ?? "";
 
