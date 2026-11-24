@@ -8490,6 +8490,8 @@ Zungri|VV|`;
         function renderSpecialtyMatches(value) {
             const container = document.getElementById('specialty-autocomplete');
             if (!container) return;
+            // l'elenco si apre solo dopo aver digitato almeno una lettera
+            if (!String(value || '').trim()) { container.classList.add('hidden'); container.innerHTML = ''; return; }
             const query = normalizeText(value);
             const byName = (a, b) => a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
             let matches;
@@ -8532,6 +8534,8 @@ Zungri|VV|`;
         function renderLocationMatches(value) {
             const container = document.getElementById('location-autocomplete');
             if (!container) return;
+            // l'elenco si apre solo dopo aver digitato almeno una lettera
+            if (!String(value || '').trim()) { container.classList.add('hidden'); container.innerHTML = ''; return; }
 
             const query = String(value || '').trim();
             const matches = searchPlaces(query);
