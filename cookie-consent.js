@@ -111,8 +111,10 @@ html.dark #pcd-ck,html.dark #pcd-ck-modal{--bg:#0f172a;--fg:#e2e8f0;--mut:#94a3b
       var t = e.target instanceof Element && e.target.closest('[data-cookie-settings]');
       if (t) { e.preventDefault(); showModal(); }
     });
+    // solo cookie tecnici: nessuna finestra alla prima visita (non serve il consenso).
+    // L'informativa resta disponibile dal link "Preferenze cookie" in fondo alle pagine.
     var c = read();
-    if (c) activate(c); else showBanner();
+    if (c) activate(c);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
