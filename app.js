@@ -178,3 +178,15 @@ export function selettoreSlot(el, slots, onScegli, iniziale = null) {
 }
 
 export const durata = (min) => min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}` : `${min} min`;
+
+// Il browser tiene un solo accesso, condiviso da tutte le schede del sito. Se in un'altra scheda
+// entra un utente diverso (per esempio il medico mentre qui c'è il paziente) o si esce, la pagina
+// si ricarica per mostrare l'utenza giusta, invece di inviare richieste con l'utenza sbagliata.
+export async function seguiCambioUtente() {
+    const { data } = await supabase.auth.getSession();
+    const iniziale = data.session?.user?.id ?? null;
+    supabase.auth.onAuthStateChange((_evento, sessione) => {
+        const ora = sessione?.user?.id ?? null;
+        if (ora !== iniziale) location.reload();
+    });
+}

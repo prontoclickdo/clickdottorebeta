@@ -91,7 +91,8 @@
         </div>
     </footer>
     <script type="module">
-        import { supabase, api, esc, euro, dataOra, quando, erroriPaziente, messaggio } from './app.js';
+        import { supabase, api, esc, euro, dataOra, quando, erroriPaziente, messaggio, seguiCambioUtente } from './app.js?v=4';
+        seguiCambioUtente();
         const $ = (id) => document.getElementById(id);
 
         // stati visti dal paziente

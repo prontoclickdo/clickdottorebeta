@@ -176,6 +176,24 @@ async function pazienteDaToken(req: Request): Promise<string | null> {
   return paz?.id ?? null;
 }
 
+// Come pazienteDaToken, ma con un errore chiaro: se nel browser è entrata un'utenza di medico,
+// hub o amministratore (per esempio in un'altra scheda) lo si dice invece di chiedere di registrarsi
+async function pazienteObbligatorio(req: Request, messaggio: string): Promise<string> {
+  const id = await pazienteDaToken(req);
+  if (id) return id;
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (token && !token.startsWith("sb_")) {
+    const { data } = await db.auth.getUser(token);
+    if (data?.user) {
+      const { data: prof } = await db.from("profili").select("id").eq("id", data.user.id).maybeSingle();
+      if (prof) {
+        throw new HttpError(403, "In questo browser è entrata un'utenza di medico, hub o amministratore (anche da un'altra scheda). Per continuare esci e accedi di nuovo con il tuo account paziente.");
+      }
+    }
+  }
+  throw new HttpError(401, messaggio);
+}
+
 // ---------------------------------------------------------------------
 // Stripe (API REST, senza librerie)
 // ---------------------------------------------------------------------
@@ -549,8 +567,7 @@ async function stripeWebhook(req: Request) {
 // Paziente registrato: richiesta, pagamento, annullamento
 // ---------------------------------------------------------------------
 async function richiestaOnline(req: Request) {
-  const paziente_id = await pazienteDaToken(req);
-  if (!paziente_id) throw new HttpError(401, "Per prenotare accedi al tuo account o registrati");
+  const paziente_id = await pazienteObbligatorio(req, "Per prenotare accedi al tuo account o registrati");
   const body = await req.json().catch(() => ({}));
   if (body.sito) throw new HttpError(400, "Richiesta non valida");   // campo trappola anti-bot
   const prestazione_id = uuid(body.prestazione_id, "prestazione");
@@ -588,8 +605,7 @@ async function richiestaOnline(req: Request) {
 }
 
 async function paga(req: Request) {
-  const paziente_id = await pazienteDaToken(req);
-  if (!paziente_id) throw new HttpError(401, "Accedi di nuovo per pagare");
+  const paziente_id = await pazienteObbligatorio(req, "Accedi di nuovo per pagare");
   const body = await req.json().catch(() => ({}));
   const id = uuid(body.id, "prenotazione");
   await db.rpc("scadi_prenotazioni");
@@ -654,8 +670,7 @@ async function avvisaAnnullamento(p: Pren, esito: EsitoRimborso, motivo: string 
 
 // Il paziente annulla dalla sua area (richiesta, quota da pagare o visita confermata)
 async function annullaRichiestaPaziente(req: Request) {
-  const paziente_id = await pazienteDaToken(req);
-  if (!paziente_id) throw new HttpError(401, "Accedi di nuovo per annullare");
+  const paziente_id = await pazienteObbligatorio(req, "Accedi di nuovo per annullare");
   const body = await req.json().catch(() => ({}));
   const id = uuid(body.id, "prenotazione");
   const p = await caricaPrenotazione(id);
@@ -1383,8 +1398,7 @@ async function candidatura(req: Request) {
 }
 
 async function aggiornaProfilo(req: Request) {
-  const id = await pazienteDaToken(req);
-  if (!id) throw new HttpError(401, "Accedi di nuovo per modificare i tuoi dati");
+  const id = await pazienteObbligatorio(req, "Accedi di nuovo per modificare i tuoi dati");
   const body = await req.json().catch(() => ({}));
   const { data: attuale } = await db.from("pazienti").select("email").eq("id", id).single();
   const dati = validaPaziente({ ...body, email: attuale!.email });   // l'email non si cambia da qui

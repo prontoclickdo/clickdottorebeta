@@ -1,8 +1,8 @@
 // Click Dottore - area riservata (amministratore, operatori degli hub, medici)
 import {
     supabase, api, esc, euro, dataOra, data, quando, durata, quotaCents, badgeStato,
-    htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, classeCampo, slotLiberi, selettoreSlot,
-} from './app.js';
+    htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, classeCampo, slotLiberi, selettoreSlot, seguiCambioUtente,
+} from './app.js?v=4';
 
 const $ = (id) => document.getElementById(id);
 const RUOLI = { admin: 'Amministratore', operatore: 'Operatore', medico: 'Medico' };
@@ -1263,6 +1263,7 @@ document.addEventListener('change', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('pannello').hidden) chiudiPannello(); });
 
 supabase.auth.onAuthStateChange((evento) => { if (evento === 'SIGNED_OUT') location.replace('accedi.html'); });
+seguiCambioUtente();
 
 avvia().catch((err) => {
     $('caricamento').hidden = true;

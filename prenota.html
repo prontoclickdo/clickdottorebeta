@@ -147,7 +147,8 @@
         </div>
     </footer>
     <script type="module">
-        import { supabase, api, esc, euro, data, quando, durata, quotaCents, htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, slotLiberi, selettoreSlot } from './app.js';
+        import { supabase, api, esc, euro, data, quando, durata, quotaCents, htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, slotLiberi, selettoreSlot, seguiCambioUtente } from './app.js?v=4';
+        seguiCambioUtente();
 
         const params = new URLSearchParams(location.search);
         const medicoId = params.get('medico') || '';
