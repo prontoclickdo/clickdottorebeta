@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <script src="cookie-consent.js?v=3"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Richiesta inviata – Click Dottore</title>
+    <meta name="robots" content="noindex">
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="theme.css">
+    <link rel="icon" href="favicon.ico?v=3" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="icona-32.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icona-192.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="icona-apple-180.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <script>
+        tailwind.config = { theme: { extend: {
+            fontFamily: { sans: ['Inter', 'sans-serif'] },
+            colors: { skybrand: { 50: '#eff5fc', 100: '#dce8f8', 200: '#b9d1f0', 300: '#8db3e5', 400: '#5a8fd6', 500: '#2a71c8', 600: '#31579c', 700: '#284780', 800: '#213a66', 900: '#0f172a' } }
+        } } };
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        html { -webkit-text-size-adjust: 100%; }
+        @media (max-width: 767px) { input, select, textarea { font-size: 16px !important; } }
+        [hidden] { display: none !important; }
+        @media print { header, footer, .no-print { display: none !important; } body { background: #fff; } }
+    </style>
+    <style>[hidden] { display: none !important; }</style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <header class="bg-white border-b border-slate-200">
+        <div class="max-w-3xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-3">
+            <a href="/" class="flex items-center min-w-0">
+                <picture><source srcset="logo-header-dark.png?v=2" media="(prefers-color-scheme: dark)"><img src="logo.png" alt="clickdottore.it - Sportello medico sanitario" class="h-11 sm:h-12 w-auto object-contain"></picture>
+            </a>
+            <a href="/" class="text-sm text-slate-600 hover:text-skybrand-600 transition"><i class="fa-solid fa-arrow-left mr-1"></i>Torna alla pagina principale</a>
+        </div>
+    </header>
+    <main class="flex-grow w-full max-w-xl mx-auto px-4 sm:px-6 py-16 flex items-center">
+        <section class="w-full bg-white border border-slate-200 rounded-2xl p-8 sm:p-10 text-center space-y-4 shadow-sm">
+            <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl"><i class="fa-solid fa-circle-check"></i></div>
+            <h1 class="text-2xl font-bold text-slate-900">Richiesta inviata</h1>
+            <p class="text-slate-700">Grazie per il tuo interesse a collaborare con Click Dottore.</p>
+            <p class="text-slate-700">Verrai ricontattato da un nostro operatore <strong>entro 24 ore lavorative</strong> all'email o al numero di telefono che hai indicato.</p>
+            <p class="text-sm text-slate-500">Ti abbiamo inviato anche un'email di conferma: se non la trovi, controlla nella cartella spam.</p>
+            <a href="/" class="inline-block mt-2 px-5 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition">Torna alla pagina principale</a>
+        </section>
+    </main>
+    <footer class="bg-slate-900 text-slate-500 py-8 mt-auto">
+        <div class="max-w-5xl mx-auto px-4 text-center text-xs space-y-2">
+            <div class="flex flex-wrap justify-center gap-x-4 gap-y-1"><a href="/" class="hover:text-white transition">Home</a><a href="accedi.html" class="hover:text-white transition">Accedi</a><a href="termini.html" class="hover:text-white transition">Termini del servizio</a><a href="privacy.html" class="hover:text-white transition">Privacy</a><a href="#" data-cookie-settings class="hover:text-white transition">Preferenze cookie</a></div>
+            <div>&copy; 2026 - Click Dottore. Tutti i diritti riservati.</div>
+        </div>
+    </footer>
+</body>
+</html>

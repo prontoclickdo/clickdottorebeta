@@ -1338,7 +1338,7 @@ async function candidatura(req: Request) {
     }
     await inviaEmail(email, "Abbiamo ricevuto la tua richiesta di adesione", layoutEmail("Grazie per il tuo interesse", `
       <p>Gentile ${esc(chi)},<br>abbiamo ricevuto la tua richiesta per collaborare con Click Dottore.</p>
-      <p>La valuteremo e ti ricontatteremo al più presto all'indirizzo email o al numero di telefono che hai indicato.</p>`), EMAIL_FROM_ACCOUNT);
+      <p>Verrai ricontattato da un nostro operatore entro 24 ore lavorative all'indirizzo email o al numero di telefono che hai indicato.</p>`), EMAIL_FROM_ACCOUNT);
   } catch (e) { console.error("Avvisi della candidatura non inviati", e); }
   return json(req, { ok: true });
 }
