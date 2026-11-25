@@ -21,6 +21,7 @@ const st = {
     orari: [], chiusure: [],
     impostazioni: {}, conti: [], regolazioni: [], candidature: [],
     daConfermare: 0,
+    abbonamento: null, abbonamenti: [],
 };
 
 const btnPrimario = 'px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60';
@@ -65,6 +66,22 @@ async function avvia() {
         : profilo.medico ? `Dott. ${profilo.medico.nome} ${profilo.medico.cognome}` : '';
     $('sottotitolo').textContent = `${RUOLI[profilo.ruolo]}${dove ? ' · ' + dove : ''}`;
     $('app').hidden = false;
+
+    // medici e hub: l'area si sblocca solo con un abbonamento valido
+    if (profilo.ruolo !== 'admin') {
+        const qs = new URLSearchParams(location.search);
+        const esito = qs.get('abbonamento');
+        if (esito) history.replaceState(null, '', location.pathname);
+        st.abbonamento = await api('stato-abbonamento', { conAccesso: true, dati: { session_id: qs.get('session_id') || undefined } });
+        $('sottotitolo').textContent = `${RUOLI[profilo.ruolo]} · ${st.abbonamento.nome}`;
+        if (!st.abbonamento.valido) {
+            mostraPiani();
+            if (esito === 'ok') avviso('Pagamento ricevuto: stiamo attivando l\'abbonamento. Se l\'area non si sblocca entro un minuto, ricarica la pagina.', 'info');
+            if (esito === 'annullato') avviso('Pagamento annullato: nessun addebito è stato effettuato.', 'info');
+            return;
+        }
+        if (esito === 'ok') setTimeout(() => avviso('Abbonamento attivo: benvenuto in Click Dottore!', 'ok'), 300);
+    }
 
     // avviso delle richieste da confermare (per il medico), sopra le schede
     const banner = document.createElement('div');
@@ -128,6 +145,7 @@ function schede() {
     if (r === 'admin' || io.hub_id) elenco.push(['conti', r === 'admin' ? 'Conti hub' : 'Conti', 'fa-scale-balanced']);
     if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['utenze', 'Utenze', 'fa-users'], ['candidature', 'Candidature', 'fa-envelope-open-text'], ['impostazioni', 'Impostazioni', 'fa-gear']);
     if (r === 'operatore') elenco.unshift(elenco.splice(1, 1)[0]);
+    if (r !== 'admin') elenco.push(['abbonamento', 'Abbonamento', 'fa-id-card']);
     $('schede').innerHTML = elenco.map(([id, testo, icona]) => `
         <button type="button" data-scheda="${id}" class="shrink-0 px-4 py-2 rounded-xl text-sm font-medium border transition ${st.scheda === id ? 'bg-skybrand-500 text-white border-transparent' : 'bg-white border-slate-200 text-slate-700 hover:border-skybrand-300'}">
             <i class="fa-solid ${icona} mr-1.5"></i>${testo}${id === 'prenotazioni' && st.daConfermare ? ` <span class="ml-1 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-xs font-bold bg-amber-500 text-white">${st.daConfermare}</span>` : ''}</button>`).join('');
@@ -145,8 +163,9 @@ async function vai(scheda) {
         if (scheda === 'orari') { await caricaOrari(); disegnaOrari(); }
         if (scheda === 'tariffe') { await caricaMedici(); disegnaTariffe(); }
         if (scheda === 'conti') { await caricaConti(); disegnaConti(); }
-        if (scheda === 'medici') { await caricaMedici(); disegnaMedici(); }
-        if (scheda === 'hub') { await caricaHub(); disegnaHub(); }
+        if (scheda === 'medici') { await Promise.all([caricaMedici(), caricaAbbonamenti()]); disegnaMedici(); }
+        if (scheda === 'hub') { await Promise.all([caricaHub(), caricaAbbonamenti()]); disegnaHub(); }
+        if (scheda === 'abbonamento') { st.abbonamento = await api('stato-abbonamento', { conAccesso: true, dati: {} }); disegnaAbbonamento(); }
         if (scheda === 'utenze') { await Promise.all([caricaProfili(), caricaHub(), caricaMedici()]); disegnaUtenze(); }
         if (scheda === 'impostazioni') { await caricaImpostazioni(); disegnaImpostazioni(); }
         if (scheda === 'candidature') { await caricaCandidature(); disegnaCandidature(); }
@@ -183,6 +202,10 @@ async function caricaMedici() {
 async function caricaHub() {
     const { data: h } = await supabase.from('hub').select('*').order('nome');
     st.hub = h || [];
+}
+async function caricaAbbonamenti() {
+    const { data: a } = await supabase.from('abbonamenti').select('*');
+    st.abbonamenti = a || [];
 }
 async function caricaProfili() {
     const { data: p } = await supabase.from('profili').select('*, hub:hub(nome, codice), medico:medici(nome, cognome)').order('creato_il', { ascending: false });
@@ -810,6 +833,7 @@ function disegnaMedici() {
                             <div class="text-xs text-slate-500">${esc(m.specializzazione)} · ${esc(m.citta)} · ${esc(m.email)}</div></div>
                             ${interruttore('medici', m.id, m.attivo)}
                         </div>
+                        ${rigaAbbonamento('medico', m.id)}
                         <div class="space-y-1.5">${pr.map((p) => `<div class="flex items-center justify-between gap-2 text-sm"><span class="text-slate-700">${esc(p.nome)}</span>${interruttore('prestazioni', p.id, p.attivo)}</div>`).join('') || '<p class="text-xs text-slate-500">Nessuna prestazione: il medico non compare nelle ricerche.</p>'}</div>
                         <form data-admin="crea_prestazione" class="flex gap-2"><input type="hidden" name="medico_id" value="${m.id}"><input name="nome" required placeholder="Nuova prestazione" class="${classeCampo}"><button type="submit" class="${btnSecondario} shrink-0">Aggiungi</button></form>
                     </div>`;
@@ -843,6 +867,7 @@ function disegnaHub() {
                             <div class="text-xs mt-1 ${h.lat != null ? 'text-emerald-700' : 'text-amber-700'}"><i class="fa-solid fa-location-dot mr-1"></i>${h.lat != null ? (h.attivo ? 'Visibile sulla mappa degli hub' : 'Ha una posizione, ma non è attivo: non compare sulla mappa') : 'Senza posizione: non compare sulla mappa (aggiungi indirizzo e città)'}</div></div>
                             ${interruttore('hub', h.id, h.attivo)}
                         </div>
+                        ${rigaAbbonamento('hub', h.id)}
                         <details class="text-sm">
                             <summary class="cursor-pointer text-skybrand-600 font-medium">Modifica dati e posizione</summary>
                             <form data-admin="aggiorna_hub" class="space-y-3 mt-3">
@@ -943,6 +968,14 @@ function disegnaImpostazioni() {
             <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Parte della quota che spetta all'hub (%)</span>
                 <input name="quota_hub_percento" type="number" min="0" max="100" step="1" value="${esc(i.quota_hub_percento ?? '80')}" required class="${classeCampo}"></label>
             <div class="pt-2 border-t border-slate-100">
+                <h2 class="font-bold text-slate-900 mt-2">Prezzi degli abbonamenti mensili</h2>
+                <p class="text-sm text-slate-500">Valgono per i nuovi abbonamenti di medici e hub; chi è già abbonato mantiene il prezzo sottoscritto.</p>
+            </div>
+            <div class="grid grid-cols-3 gap-3">${PIANI.map((p) => `
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">${PIANI_INFO[p].nome} (€)</span>
+                    <input name="abbonamento_${p}" type="number" min="1" max="1000" step="0.01" value="${(Number(i[`abbonamento_${p}_cents`] ?? PIANI_INFO[p].cents) / 100).toFixed(2)}" required class="${classeCampo}"></label>`).join('')}
+            </div>
+            <div class="pt-2 border-t border-slate-100">
                 <h2 class="font-bold text-slate-900 mt-2">Conto per i bonifici degli hub</h2>
                 <p class="text-sm text-slate-500">Mostrato agli hub nella scheda Conti, per versare la parte di Click Dottore con bonifico istantaneo.</p>
             </div>
@@ -972,6 +1005,7 @@ async function inviaAdmin(form) {
             azione, quota_cents: Math.round(Number(String(f.quota_euro).replace(',', '.')) * 100),
             quota_hub_percento: Number(f.quota_hub_percento), iban: f.iban, intestatario: f.intestatario, email_candidature: f.email_candidature,
         };
+        for (const p of PIANI) dati[`abbonamento_${p}_cents`] = Math.round(Number(String(f[`abbonamento_${p}`]).replace(',', '.')) * 100);
     }
     if (azione === 'invita_utente') { dati.hub_id = f.hub_id || null; dati.medico_id = f.medico_id || null; }
     btn.disabled = true;
@@ -989,6 +1023,130 @@ async function inviaAdmin(form) {
         avviso(err.message);
         btn.disabled = false;
     }
+}
+
+// ---------------------------------------------------------------------
+// Abbonamento mensile di medici e hub
+// ---------------------------------------------------------------------
+const PIANI = ['starter', 'plus', 'premium'];
+const PIANI_INFO = {
+    starter: { nome: 'Starter', cents: 1990, icona: 'fa-seedling', punti: ['Tutte le funzioni dell\'area riservata', 'Prenotazioni, orari, prestazioni e conti', 'Visibilità nella ricerca e sulla mappa del sito'] },
+    plus: { nome: 'Plus', cents: 3990, icona: 'fa-star', punti: ['Tutto ciò che include Starter', 'Funzioni prioritarie (in arrivo)'] },
+    premium: { nome: 'Premium', cents: 5990, icona: 'fa-crown', punti: ['Tutto ciò che include Plus', 'Massima priorità e funzioni esclusive (in arrivo)'] },
+};
+const STATI_ABBONAMENTO = {
+    active: ['Attivo', 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+    trialing: ['In prova', 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+    past_due: ['Pagamento non riuscito', 'bg-red-50 text-red-700 border-red-200'],
+    unpaid: ['Non pagato', 'bg-red-50 text-red-700 border-red-200'],
+    canceled: ['Disdetto', 'bg-slate-50 text-slate-600 border-slate-200'],
+    incomplete: ['Pagamento da completare', 'bg-amber-50 text-amber-700 border-amber-200'],
+    incomplete_expired: ['Pagamento scaduto', 'bg-slate-50 text-slate-600 border-slate-200'],
+    paused: ['In pausa', 'bg-amber-50 text-amber-700 border-amber-200'],
+    nessuno: ['Nessun abbonamento', 'bg-slate-50 text-slate-600 border-slate-200'],
+};
+const badgeAbbonamento = (stato, esente) => {
+    const [testo, classi] = esente ? ['Esente', 'bg-skybrand-50 text-skybrand-700 border-skybrand-200'] : (STATI_ABBONAMENTO[stato] || [stato, 'bg-slate-50 text-slate-600 border-slate-200']);
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${classi}">${esc(testo)}</span>`;
+};
+
+async function vaiAStripe(btn, percorso, dati) {
+    const testo = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Apertura di Stripe...';
+    try {
+        const { url } = await api(percorso, { conAccesso: true, dati });
+        location.href = url;
+    } catch (err) {
+        avviso(err.message);
+        btn.disabled = false;
+        btn.innerHTML = testo;
+    }
+}
+
+function schedePiani(attuale = null) {
+    const prezzi = st.abbonamento?.prezzi || {};
+    return `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">${PIANI.map((p) => {
+        const info = PIANI_INFO[p];
+        const inEvidenza = p === 'plus';
+        const pulsante = attuale
+            ? (attuale === p ? `<div class="w-full text-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 text-slate-500">Piano attuale</div>`
+                : `<button type="button" data-cambia-piano="${p}" class="${inEvidenza ? btnPrimario : btnSecondario} w-full">Passa a ${info.nome}</button>`)
+            : `<button type="button" data-abbonati="${p}" class="${inEvidenza ? btnPrimario : btnSecondario} w-full">Scegli ${info.nome}</button>`;
+        return `<div class="${card} flex flex-col gap-4 ${inEvidenza ? 'border-skybrand-400 ring-1 ring-skybrand-400' : ''}">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2"><span class="w-9 h-9 rounded-xl bg-skybrand-50 text-skybrand-600 flex items-center justify-center"><i class="fa-solid ${info.icona}"></i></span><h3 class="font-bold text-slate-900">${info.nome}</h3></div>
+                ${inEvidenza ? '<span class="text-xs font-semibold text-skybrand-700 bg-skybrand-50 px-2 py-0.5 rounded-full">Consigliato</span>' : ''}
+            </div>
+            <div><span class="text-3xl font-bold text-slate-900">${euro(prezzi[p] ?? info.cents)}</span><span class="text-sm text-slate-500"> / mese</span></div>
+            <ul class="space-y-2 text-sm text-slate-600 flex-grow">${info.punti.map((x) => `<li class="flex gap-2"><i class="fa-solid fa-check text-skybrand-500 mt-1"></i><span>${esc(x)}</span></li>`).join('')}</ul>
+            ${pulsante}
+        </div>`;
+    }).join('')}</div>`;
+}
+
+// Area bloccata: scelta del piano o regolarizzazione del pagamento
+function mostraPiani() {
+    const a = st.abbonamento;
+    $('schede').hidden = true;
+    const scaduta = a.periodo_fine && ['canceled', 'unpaid'].includes(a.stato);
+    $('vista').innerHTML = a.in_sospeso ? `
+        <div class="${card} max-w-xl mx-auto text-center space-y-4 py-8">
+            <span class="w-14 h-14 mx-auto rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-2xl"><i class="fa-solid fa-lock"></i></span>
+            <h2 class="text-lg font-bold text-slate-900">Area riservata sospesa</h2>
+            <p class="text-sm text-slate-600">L'ultimo pagamento dell'abbonamento ${a.piano ? esc(PIANI_INFO[a.piano].nome) + ' ' : ''}non è andato a buon fine. Le tue credenziali restano valide: appena il pagamento viene regolarizzato l'area si sblocca di nuovo.</p>
+            <div class="flex flex-col sm:flex-row gap-2 justify-center">
+                ${a.fattura ? `<a href="${esc(a.fattura)}" class="${btnPrimario}"><i class="fa-solid fa-credit-card mr-2"></i>Paga la fattura in sospeso</a>` : ''}
+                <button type="button" data-portale class="${a.fattura ? btnSecondario : btnPrimario}"><i class="fa-solid fa-gear mr-2"></i>Gestisci pagamento</button>
+            </div>
+        </div>` : `
+        <div class="space-y-5">
+            <div class="${card} text-center space-y-2 py-6">
+                <span class="w-12 h-12 mx-auto rounded-2xl bg-skybrand-50 text-skybrand-600 flex items-center justify-center text-xl"><i class="fa-solid fa-lock"></i></span>
+                <h2 class="text-lg font-bold text-slate-900">${scaduta ? 'Il tuo abbonamento è terminato' : 'Attiva il tuo abbonamento'}</h2>
+                <p class="text-sm text-slate-600 max-w-xl mx-auto">${scaduta ? 'Scegli di nuovo un piano per riattivare l\'area riservata: i tuoi dati sono ancora tutti qui.' : 'Per usare l\'area riservata di Click Dottore scegli un abbonamento mensile. Il pagamento è gestito in sicurezza da Stripe e puoi disdire quando vuoi dalla scheda Abbonamento.'}</p>
+            </div>
+            ${schedePiani()}
+            <p class="text-xs text-slate-500 text-center">Prezzi mensili IVA inclusa. Il rinnovo è automatico ogni mese; se un pagamento non va a buon fine l'area riservata viene sospesa finché non è regolarizzato.</p>
+        </div>`;
+}
+
+function disegnaAbbonamento() {
+    const a = st.abbonamento;
+    if (a.esente) {
+        $('vista').innerHTML = `<div class="${card} max-w-xl space-y-2"><div class="flex items-center gap-2"><h2 class="font-bold text-slate-900">Abbonamento</h2>${badgeAbbonamento(a.stato, true)}</div>
+            <p class="text-sm text-slate-600">Click Dottore ti ha concesso l'accesso all'area riservata senza abbonamento.</p></div>`;
+        return;
+    }
+    const fine = a.periodo_fine ? data(a.periodo_fine.slice(0, 10)) : null;
+    $('vista').innerHTML = `
+        <div class="space-y-5">
+            <div class="${card} space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <div class="flex items-center gap-2"><h2 class="font-bold text-slate-900">Piano ${a.piano ? esc(PIANI_INFO[a.piano].nome) : ''}</h2>${badgeAbbonamento(a.stato, false)}</div>
+                        <p class="text-sm text-slate-500 mt-1">${a.disdetta
+                            ? `<i class="fa-solid fa-circle-exclamation text-amber-500 mr-1"></i>Disdetto: l'accesso resta attivo fino al ${esc(fine || '')}, poi l'area riservata verrà bloccata.`
+                            : fine ? `Prossimo rinnovo il ${esc(fine)}.` : ''}</p>
+                    </div>
+                    ${a.gestibile ? `<button type="button" data-portale class="${btnSecondario}"><i class="fa-solid fa-file-invoice mr-2"></i>Pagamenti, fatture e disdetta</button>` : ''}
+                </div>
+            </div>
+            <div>
+                <h3 class="font-semibold text-slate-900 mb-3">${a.disdetta ? 'Riattiva o cambia piano' : 'Cambia piano'}</h3>
+                ${schedePiani(a.disdetta ? '__' : a.piano)}
+            </div>
+        </div>`;
+}
+
+function rigaAbbonamento(tipo, id) {
+    const a = st.abbonamenti.find((x) => (tipo === 'hub' ? x.hub_id : x.medico_id) === id);
+    const esente = !!a?.esente;
+    const dettaglio = a && !esente && a.piano ? ` · ${PIANI_INFO[a.piano]?.nome || ''}${a.periodo_fine ? ` · ${a.disdetta_a_fine_periodo ? 'fino al' : 'rinnovo'} ${data(a.periodo_fine.slice(0, 10))}` : ''}` : '';
+    return `<div class="flex flex-wrap items-center justify-between gap-2 text-xs border-t border-slate-100 pt-3">
+        <span class="text-slate-600"><i class="fa-solid fa-id-card mr-1 text-slate-400"></i>Abbonamento: ${badgeAbbonamento(a?.stato || 'nessuno', esente)}<span class="ml-1">${esc(dettaglio)}</span></span>
+        <button type="button" data-esente="${tipo}:${id}:${esente ? '0' : '1'}" class="px-3 py-1.5 rounded-lg font-semibold border ${esente ? 'border-skybrand-200 text-skybrand-700 bg-skybrand-50' : 'border-slate-200 text-slate-600 bg-white hover:border-skybrand-300'}">${esente ? 'Togli esenzione' : 'Rendi esente'}</button>
+    </div>`;
 }
 
 // ---------------------------------------------------------------------
@@ -1038,6 +1196,29 @@ document.addEventListener('click', async (e) => {
         try {
             await api('medico', { conAccesso: true, dati: { azione: 'elimina_chiusura', id: t.dataset.eliminaChiusura, medico_id: st.medicoGestito } });
             await vai('orari');
+        } catch (err) { avviso(err.message); t.disabled = false; }
+        return;
+    }
+    if (t.dataset.abbonati) return vaiAStripe(t, 'abbonati', { piano: t.dataset.abbonati });
+    if (t.hasAttribute('data-portale')) return vaiAStripe(t, 'portale-abbonamento', {});
+    if (t.dataset.cambiaPiano) {
+        const p = t.dataset.cambiaPiano;
+        const prezzo = euro(st.abbonamento?.prezzi?.[p]);
+        if (!confirm(`Passare al piano ${PIANI_INFO[p].nome} (${prezzo} al mese)? La differenza per i giorni restanti del mese viene addebitata o accreditata subito sulla carta dell'abbonamento.`)) return;
+        t.disabled = true;
+        try {
+            await api('cambia-piano', { conAccesso: true, dati: { piano: p } });
+            await vai('abbonamento');
+            avviso(`Piano ${PIANI_INFO[p].nome} attivo`, 'ok');
+        } catch (err) { avviso(err.message); t.disabled = false; }
+        return;
+    }
+    if (t.dataset.esente) {
+        const [tipo, id, valore] = t.dataset.esente.split(':');
+        t.disabled = true;
+        try {
+            await api('admin', { conAccesso: true, dati: { azione: 'imposta_esente', tipo, id, esente: valore === '1' } });
+            await vai(st.scheda);
         } catch (err) { avviso(err.message); t.disabled = false; }
         return;
     }

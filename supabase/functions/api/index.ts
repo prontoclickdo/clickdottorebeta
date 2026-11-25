@@ -19,6 +19,10 @@
 //   GET  /api/captcha                 domanda di verifica per il modulo Lavora con noi
 //   POST /api/candidatura             richiesta di adesione di un medico o di un hub
 //   POST /api/promemoria              promemoria al paziente il giorno prima della visita (chiamato ogni ora da pg_cron)
+//   POST /api/stato-abbonamento       stato dell'abbonamento mensile del medico o dell'hub
+//   POST /api/abbonati                avvia l'abbonamento mensile (Stripe Checkout)
+//   POST /api/portale-abbonamento     metodo di pagamento, fatture e disdetta (portale clienti Stripe)
+//   POST /api/cambia-piano            passaggio a un altro piano
 //
 // Segreti richiesti (Edge Functions > Secrets):
 //   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY
@@ -146,13 +150,19 @@ type Profilo = {
   hub_id: string | null; medico_id: string | null; attivo: boolean;
 };
 
-async function utente(req: Request): Promise<Profilo> {
+// Medici e hub devono avere un abbonamento valido (o essere esenti); l'amministratore no.
+// Con richiediAbbonamento = false si usa solo per i percorsi degli abbonamenti stessi.
+async function utente(req: Request, richiediAbbonamento = true): Promise<Profilo> {
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!token) throw new HttpError(401, "Accesso richiesto");
   const { data, error } = await db.auth.getUser(token);
   if (error || !data?.user) throw new HttpError(401, "Sessione non valida, accedi di nuovo");
   const { data: profilo } = await db.from("profili").select("*").eq("id", data.user.id).maybeSingle();
   if (!profilo || !profilo.attivo) throw new HttpError(403, "Utenza non abilitata");
+  if (richiediAbbonamento && profilo.ruolo !== "admin") {
+    const { data: ok } = await db.rpc("profilo_abilitato", { p_id: profilo.id });
+    if (ok !== true) throw new HttpError(402, "Abbonamento non attivo: attivalo o rinnovalo dall'area riservata");
+  }
   return profilo as Profilo;
 }
 
@@ -516,6 +526,17 @@ async function stripeWebhook(req: Request) {
   }
   const evento = JSON.parse(raw);
   const s = evento.data?.object ?? {};
+  if (String(evento.type).startsWith("customer.subscription.")) {
+    // rileggo l'abbonamento da Stripe: gli eventi possono arrivare in ordine diverso
+    await sincronizzaAbbonamento(s.id ? await stripe("GET", `subscriptions/${s.id}`) : s);
+    return new Response("ok", { status: 200 });
+  }
+  if (s.object === "checkout.session" && s.mode === "subscription") {
+    if (evento.type === "checkout.session.completed" && s.subscription) {
+      await sincronizzaAbbonamento(await stripe("GET", `subscriptions/${s.subscription}`));
+    }
+    return new Response("ok", { status: 200 });
+  }
   const pid = s.metadata?.prenotazione_id ?? s.client_reference_id;
   if (pid && ((evento.type === "checkout.session.completed" && s.payment_status === "paid") ||
       evento.type === "checkout.session.async_payment_succeeded")) {
@@ -1031,6 +1052,17 @@ async function admin(req: Request) {
       if (error) throw new HttpError(500, "Impossibile creare la prestazione");
       return json(req, data);
     }
+    case "imposta_esente": {
+      const tipo = String(body.tipo ?? "");
+      if (!["hub", "medico"].includes(tipo)) throw new HttpError(400, "Tipo non valido");
+      const id = uuid(body.id, tipo);
+      const colonna = tipo === "hub" ? "hub_id" : "medico_id";
+      const { error } = await db.from("abbonamenti")
+        .upsert({ [colonna]: id, esente: body.esente === true, aggiornato_il: new Date().toISOString() }, { onConflict: colonna });
+      if (error) throw new HttpError(500, "Impossibile aggiornare l'abbonamento");
+      await registra(io.id, "imposta_esente", null, { tipo, id, esente: body.esente === true });
+      return json(req, { ok: true });
+    }
     case "imposta_attivo": {
       const tabella = String(body.tabella ?? "");
       if (!["hub", "medici", "prestazioni", "profili"].includes(tabella)) throw new HttpError(400, "Tabella non valida");
@@ -1085,6 +1117,13 @@ async function admin(req: Request) {
         const e = String(body.email_candidature ?? "").trim().toLowerCase();
         if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) throw new HttpError(400, "Email per le candidature non valida");
         await db.from("impostazioni").upsert({ chiave: "email_candidature", valore: e });
+      }
+      for (const piano of PIANI) {
+        const v = body[`abbonamento_${piano}_cents`];
+        if (v === undefined) continue;
+        const cents = Math.round(Number(v));
+        if (!Number.isFinite(cents) || cents < 100 || cents > 100000) throw new HttpError(400, `Prezzo del piano ${NOMI_PIANI[piano]} non valido (da 1 € a 1.000 €)`);
+        await db.from("impostazioni").upsert({ chiave: `abbonamento_${piano}_cents`, valore: String(cents) });
       }
       if (body.intestatario !== undefined) {
         await db.from("impostazioni").upsert({ chiave: "intestatario_iban", valore: testo(body.intestatario, "intestatario", 120, false) });
@@ -1360,6 +1399,267 @@ async function aggiornaProfilo(req: Request) {
 
 
 // ---------------------------------------------------------------------
+// Abbonamenti mensili di medici e hub (Stripe Billing)
+// ---------------------------------------------------------------------
+const PIANI = ["starter", "plus", "premium"] as const;
+type Piano = typeof PIANI[number];
+const NOMI_PIANI: Record<Piano, string> = { starter: "Starter", plus: "Plus", premium: "Premium" };
+const PREZZI_PREDEFINITI: Record<Piano, number> = { starter: 1990, plus: 3990, premium: 5990 };
+const STATI_VALIDI = ["active", "trialing"];
+const STATI_IN_SOSPESO = ["past_due", "unpaid"];   // pagamento non riuscito: si regolarizza dal portale
+
+type Soggetto = { hub_id: string | null; medico_id: string | null };
+// deno-lint-ignore no-explicit-any
+type Riga = any;
+
+function soggetto(io: Profilo): Soggetto {
+  if (io.ruolo === "medico" && io.medico_id) return { hub_id: null, medico_id: io.medico_id };
+  if (io.ruolo === "operatore" && io.hub_id) return { hub_id: io.hub_id, medico_id: null };
+  throw new HttpError(400, "Questa utenza non richiede un abbonamento");
+}
+
+async function abbonamentoDi(s: Soggetto): Promise<Riga | null> {
+  const q = db.from("abbonamenti").select("*");
+  const { data } = await (s.medico_id ? q.eq("medico_id", s.medico_id) : q.eq("hub_id", s.hub_id!)).maybeSingle();
+  return data;
+}
+
+function piano(v: unknown): Piano {
+  const p = String(v ?? "") as Piano;
+  if (!PIANI.includes(p)) throw new HttpError(400, "Piano non valido");
+  return p;
+}
+
+async function prezziPiani(): Promise<Record<Piano, number>> {
+  const { data } = await db.from("impostazioni").select("chiave, valore").like("chiave", "abbonamento_%_cents");
+  const out = { ...PREZZI_PREDEFINITI };
+  for (const r of data ?? []) {
+    const p = /^abbonamento_(\w+)_cents$/.exec(r.chiave)?.[1] as Piano;
+    const n = parseInt(r.valore, 10);
+    if (PIANI.includes(p) && Number.isFinite(n) && n >= 100) out[p] = n;
+  }
+  return out;
+}
+
+// Prezzo mensile in Stripe per il piano, creato al primo uso. Se l'amministratore cambia
+// il prezzo nasce un nuovo prezzo Stripe: i nuovi abbonamenti lo usano, quelli in corso
+// mantengono il prezzo con cui sono stati sottoscritti.
+async function prezzoStripe(p: Piano): Promise<string> {
+  const cents = (await prezziPiani())[p];
+  const lookup = `cd_${p}_${cents}`;
+  const trovati = await stripe("GET", "prices", { lookup_keys: [lookup], active: "true", limit: 1 });
+  if (trovati.data?.[0]?.id) return trovati.data[0].id;
+  const prodotto = `cd_piano_${p}`;
+  try {
+    await stripe("GET", `products/${prodotto}`);
+  } catch (_) {
+    await stripe("POST", "products", {
+      id: prodotto, name: `Click Dottore ${NOMI_PIANI[p]}`, metadata: { piano: p },
+      description: `Abbonamento mensile all'area riservata di Click Dottore - piano ${NOMI_PIANI[p]}`,
+    });
+  }
+  const nuovo = await stripe("POST", "prices", {
+    product: prodotto, currency: "eur", unit_amount: cents, recurring: { interval: "month" },
+    lookup_key: lookup, metadata: { piano: p }, tax_behavior: "inclusive",
+  });
+  return nuovo.id;
+}
+
+async function nomeSoggetto(s: Soggetto): Promise<string> {
+  if (s.medico_id) {
+    const { data } = await db.from("medici").select("nome, cognome").eq("id", s.medico_id).maybeSingle();
+    return data ? `Dott. ${data.nome} ${data.cognome}` : "Medico";
+  }
+  const { data } = await db.from("hub").select("nome").eq("id", s.hub_id!).maybeSingle();
+  return data?.nome ?? "Hub";
+}
+
+async function clienteStripe(io: Profilo, s: Soggetto, ab: Riga | null): Promise<string> {
+  if (ab?.stripe_customer_id) return ab.stripe_customer_id;
+  const c = await stripe("POST", "customers", {
+    email: io.email, name: await nomeSoggetto(s), preferred_locales: ["it"],
+    metadata: { hub_id: s.hub_id ?? "", medico_id: s.medico_id ?? "" },
+  });
+  const colonna = s.medico_id ? "medico_id" : "hub_id";
+  const { error } = await db.from("abbonamenti").upsert(
+    { [colonna]: s.medico_id ?? s.hub_id, stripe_customer_id: c.id, aggiornato_il: new Date().toISOString() },
+    { onConflict: colonna },
+  );
+  if (error) throw new HttpError(500, "Impossibile preparare l'abbonamento");
+  return c.id;
+}
+
+// Copia nel database lo stato di un abbonamento Stripe (dal webhook o dopo il pagamento)
+async function sincronizzaAbbonamento(sub: Riga) {
+  if (!sub?.id || sub.object !== "subscription") return;
+  const meta = sub.metadata ?? {};
+  const voce = sub.items?.data?.[0];
+  const daLookup = /^cd_(starter|plus|premium)_/.exec(voce?.price?.lookup_key ?? "")?.[1];
+  const p = daLookup ?? voce?.price?.metadata?.piano ?? meta.piano ?? null;
+  const fine = sub.current_period_end ?? voce?.current_period_end ?? null;
+  const cliente = typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null;
+  const dati = {
+    piano: PIANI.includes(p) ? p : null,
+    stato: String(sub.status ?? "nessuno"),
+    stripe_subscription_id: sub.id,
+    stripe_customer_id: cliente,
+    periodo_fine: fine ? new Date(fine * 1000).toISOString() : null,
+    disdetta_a_fine_periodo: !!sub.cancel_at_period_end || !!sub.cancel_at,
+    aggiornato_il: new Date().toISOString(),
+  };
+  let ab: Riga | null = (await db.from("abbonamenti").select("*").eq("stripe_subscription_id", sub.id).maybeSingle()).data;
+  if (!ab && cliente) ab = (await db.from("abbonamenti").select("*").eq("stripe_customer_id", cliente).maybeSingle()).data;
+  if (!ab && (meta.medico_id || meta.hub_id)) {
+    ab = await abbonamentoDi({ hub_id: meta.hub_id || null, medico_id: meta.medico_id || null });
+  }
+  if (ab) {
+    // un evento di un vecchio abbonamento non deve sovrascrivere quello nuovo già attivo
+    if (ab.stripe_subscription_id && ab.stripe_subscription_id !== sub.id &&
+        STATI_VALIDI.includes(ab.stato) && !STATI_VALIDI.includes(dati.stato)) return;
+    await db.from("abbonamenti").update(dati).eq("id", ab.id);
+  } else if (meta.medico_id || meta.hub_id) {
+    await db.from("abbonamenti").insert({ ...dati, medico_id: meta.medico_id || null, hub_id: meta.medico_id ? null : meta.hub_id });
+  } else {
+    console.warn("Abbonamento Stripe senza riferimenti a medico o hub", sub.id);
+  }
+}
+
+async function statoAbbonamento(req: Request) {
+  const io = await utente(req, false);
+  const prezzi = await prezziPiani();
+  if (io.ruolo === "admin") return json(req, { admin: true, valido: true, prezzi });
+  const s = soggetto(io);
+  const body = await req.json().catch(() => ({}));
+  let ab = await abbonamentoDi(s);
+  // ritorno dal pagamento: aggiorno subito senza attendere il webhook
+  const sessionId = String(body.session_id ?? "");
+  if (/^cs_[A-Za-z0-9_]+$/.test(sessionId) && ab?.stripe_customer_id) {
+    try {
+      const sess = await stripe("GET", `checkout/sessions/${sessionId}`);
+      if (sess.customer === ab.stripe_customer_id && sess.subscription) {
+        await sincronizzaAbbonamento(await stripe("GET", `subscriptions/${sess.subscription}`));
+        ab = await abbonamentoDi(s);
+      }
+    } catch (e) { console.error("Sincronizzazione abbonamento", e); }
+  }
+  let fattura: string | null = null;
+  if (ab?.stripe_subscription_id && STATI_IN_SOSPESO.includes(ab.stato)) {
+    try {
+      const sub = await stripe("GET", `subscriptions/${ab.stripe_subscription_id}`, { expand: ["latest_invoice"] });
+      if (sub.latest_invoice?.status === "open") fattura = sub.latest_invoice.hosted_invoice_url ?? null;
+    } catch (_) { /* il portale resta comunque disponibile */ }
+  }
+  return json(req, {
+    admin: false,
+    nome: await nomeSoggetto(s),
+    tipo: s.medico_id ? "medico" : "hub",
+    valido: !!ab && (ab.esente || STATI_VALIDI.includes(ab.stato)),
+    esente: !!ab?.esente,
+    piano: ab?.piano ?? null,
+    stato: ab?.stato ?? "nessuno",
+    periodo_fine: ab?.periodo_fine ?? null,
+    disdetta: !!ab?.disdetta_a_fine_periodo,
+    in_sospeso: !!ab && STATI_IN_SOSPESO.includes(ab.stato),
+    gestibile: !!ab?.stripe_customer_id,
+    fattura,
+    prezzi,
+  });
+}
+
+async function abbonati(req: Request) {
+  const io = await utente(req, false);
+  const s = soggetto(io);
+  const body = await req.json().catch(() => ({}));
+  const p = piano(body.piano);
+  const ab = await abbonamentoDi(s);
+  if (ab && (ab.esente || STATI_VALIDI.includes(ab.stato))) throw new HttpError(409, "Il tuo abbonamento è già attivo");
+  if (ab && STATI_IN_SOSPESO.includes(ab.stato)) {
+    throw new HttpError(409, "C'è un pagamento in sospeso: regolarizzalo da «Gestisci pagamento»");
+  }
+  const customer = await clienteStripe(io, s, ab);
+  const price = await prezzoStripe(p);
+  const meta = { hub_id: s.hub_id ?? "", medico_id: s.medico_id ?? "", piano: p };
+  const sess = await stripe("POST", "checkout/sessions", {
+    mode: "subscription",
+    customer,
+    line_items: [{ price, quantity: 1 }],
+    locale: "it",
+    success_url: `${SITE}/area.html?abbonamento=ok&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${SITE}/area.html?abbonamento=annullato`,
+    metadata: meta,
+    subscription_data: { metadata: meta, description: `Click Dottore ${NOMI_PIANI[p]}` },
+    billing_address_collection: "required",
+    customer_update: { name: "auto", address: "auto" },
+    tax_id_collection: { enabled: "true" },
+    allow_promotion_codes: "true",
+  });
+  await registra(io.id, "abbonati", null, { piano: p });
+  return json(req, { url: sess.url });
+}
+
+async function configurazionePortale(): Promise<string> {
+  const salvata = await impostazione("stripe_portale_config");
+  if (salvata) return salvata;
+  const c = await stripe("POST", "billing_portal/configurations", {
+    business_profile: {
+      headline: "Click Dottore - gestione dell'abbonamento",
+      privacy_policy_url: `${SITE}/privacy.html`,
+      terms_of_service_url: `${SITE}/termini.html`,
+    },
+    features: {
+      payment_method_update: { enabled: "true" },
+      invoice_history: { enabled: "true" },
+      customer_update: { enabled: "true", allowed_updates: ["email", "address", "name", "tax_id"] },
+      subscription_cancel: { enabled: "true", mode: "at_period_end" },
+    },
+    default_return_url: `${SITE}/area.html`,
+  });
+  await db.from("impostazioni").upsert({ chiave: "stripe_portale_config", valore: c.id });
+  return c.id;
+}
+
+async function portaleAbbonamento(req: Request) {
+  const io = await utente(req, false);
+  const ab = await abbonamentoDi(soggetto(io));
+  if (!ab?.stripe_customer_id) throw new HttpError(409, "Non c'è ancora un abbonamento da gestire");
+  const sess = await stripe("POST", "billing_portal/sessions", {
+    customer: ab.stripe_customer_id,
+    configuration: await configurazionePortale(),
+    return_url: `${SITE}/area.html?abbonamento=portale`,
+    locale: "it",
+  });
+  return json(req, { url: sess.url });
+}
+
+async function cambiaPiano(req: Request) {
+  const io = await utente(req, false);
+  const s = soggetto(io);
+  const body = await req.json().catch(() => ({}));
+  const p = piano(body.piano);
+  const ab = await abbonamentoDi(s);
+  if (!ab?.stripe_subscription_id || !STATI_VALIDI.includes(ab.stato)) {
+    throw new HttpError(409, "Serve un abbonamento attivo per cambiare piano");
+  }
+  if (ab.piano === p && !ab.disdetta_a_fine_periodo) throw new HttpError(409, "È già il tuo piano");
+  const sub = await stripe("GET", `subscriptions/${ab.stripe_subscription_id}`);
+  const voce = sub.items?.data?.[0];
+  if (!voce) throw new HttpError(500, "Abbonamento non leggibile");
+  const price = await prezzoStripe(p);
+  // la differenza viene addebitata (o accreditata) subito, in proporzione ai giorni restanti
+  const aggiornato = await stripe("POST", `subscriptions/${sub.id}`, {
+    items: [{ id: voce.id, price }],
+    proration_behavior: "always_invoice",
+    payment_behavior: "error_if_incomplete",
+    cancel_at_period_end: "false",
+    metadata: { ...(sub.metadata ?? {}), piano: p },
+    description: `Click Dottore ${NOMI_PIANI[p]}`,
+  });
+  await sincronizzaAbbonamento(aggiornato);
+  await registra(io.id, "cambia_piano", null, { da: ab.piano, a: p });
+  return json(req, { ok: true });
+}
+
+// ---------------------------------------------------------------------
 // Smistamento delle richieste
 // ---------------------------------------------------------------------
 Deno.serve(async (req: Request) => {
@@ -1385,6 +1685,10 @@ Deno.serve(async (req: Request) => {
       case "aggiorna-profilo": return await aggiornaProfilo(req);
       case "promemoria": return await promemoria(req);
       case "candidatura": return await candidatura(req);
+      case "stato-abbonamento": return await statoAbbonamento(req);
+      case "abbonati": return await abbonati(req);
+      case "portale-abbonamento": return await portaleAbbonamento(req);
+      case "cambia-piano": return await cambiaPiano(req);
       default: throw new HttpError(404, "Percorso sconosciuto");
     }
   } catch (e) {
