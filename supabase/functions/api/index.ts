@@ -16,6 +16,8 @@
 //   POST /api/recupero-password       link per reimpostare la password
 //   POST /api/registrati              registrazione del paziente (email di conferma)
 //   POST /api/aggiorna-profilo        il paziente aggiorna i propri dati
+//   GET  /api/captcha                 domanda di verifica per il modulo Lavora con noi
+//   POST /api/candidatura             richiesta di adesione di un medico o di un hub
 //   POST /api/promemoria              promemoria al paziente il giorno prima della visita (chiamato ogni ora da pg_cron)
 //
 // Segreti richiesti (Edge Functions > Secrets):
@@ -220,7 +222,7 @@ async function firmaStripeValida(raw: string, header: string | null): Promise<bo
 // ---------------------------------------------------------------------
 // Email (Resend)
 // ---------------------------------------------------------------------
-async function inviaEmail(a: string, oggetto: string, html: string, mittente = EMAIL_FROM) {
+async function inviaEmail(a: string, oggetto: string, html: string, mittente = EMAIL_FROM, rispondiA: string | null = null) {
   const key = Deno.env.get("RESEND_API_KEY");
   if (!key) { console.warn("RESEND_API_KEY mancante: email non inviata a", a); return; }
   const r = await fetch("https://api.resend.com/emails", {
@@ -228,7 +230,7 @@ async function inviaEmail(a: string, oggetto: string, html: string, mittente = E
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: mittente, to: [a], subject: oggetto, html,
-      ...(EMAIL_REPLY_TO ? { reply_to: EMAIL_REPLY_TO } : {}),
+      ...(rispondiA ? { reply_to: rispondiA } : EMAIL_REPLY_TO ? { reply_to: EMAIL_REPLY_TO } : {}),
     }),
   });
   if (!r.ok) console.error("Errore invio email", r.status, await r.text());
@@ -997,6 +999,13 @@ async function admin(req: Request) {
       await registra(io.id, "aggiorna_hub", null, { id, posizione: !!pos });
       return json(req, data);
     }
+    case "stato_candidatura": {
+      const stato = String(body.stato ?? "");
+      if (!["nuova", "in_valutazione", "accettata", "rifiutata"].includes(stato)) throw new HttpError(400, "Stato non valido");
+      const { error } = await db.from("candidature").update({ stato }).eq("id", uuid(body.id, "candidatura"));
+      if (error) throw new HttpError(500, "Aggiornamento non riuscito");
+      return json(req, { ok: true });
+    }
     case "crea_medico": {
       const riga = {
         nome: testo(body.nome, "nome", 60), cognome: testo(body.cognome, "cognome", 60),
@@ -1071,6 +1080,11 @@ async function admin(req: Request) {
         const iban = String(body.iban ?? "").toUpperCase().replace(/\s/g, "");
         if (iban && !/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) throw new HttpError(400, "IBAN non valido");
         await db.from("impostazioni").upsert({ chiave: "iban_click_dottore", valore: iban });
+      }
+      if (body.email_candidature !== undefined) {
+        const e = String(body.email_candidature ?? "").trim().toLowerCase();
+        if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) throw new HttpError(400, "Email per le candidature non valida");
+        await db.from("impostazioni").upsert({ chiave: "email_candidature", valore: e });
       }
       if (body.intestatario !== undefined) {
         await db.from("impostazioni").upsert({ chiave: "intestatario_iban", valore: testo(body.intestatario, "intestatario", 120, false) });
@@ -1239,6 +1253,96 @@ async function promemoria(req: Request) {
   return json(req, { inviati });
 }
 
+// ---------------------------------------------------------------------
+// "Lavora con noi": captcha e richieste di adesione di medici e hub
+// ---------------------------------------------------------------------
+// Il captcha è una piccola somma scritta in lettere; la risposta non viene salvata da nessuna parte:
+// il server firma (HMAC) scadenza e risposta corretta e al momento dell'invio ricontrolla la firma.
+const NUMERI = ["zero", "uno", "due", "tre", "quattro", "cinque", "sei", "sette", "otto", "nove", "dieci", "undici", "dodici"];
+async function firmaCaptcha(testoDaFirmare: string): Promise<string> {
+  const chiave = await crypto.subtle.importKey("raw", new TextEncoder().encode("captcha:" + (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const firma = await crypto.subtle.sign("HMAC", chiave, new TextEncoder().encode(testoDaFirmare));
+  return Array.from(new Uint8Array(firma)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function captcha(req: Request) {
+  const a = 2 + Math.floor(Math.random() * 9), b = 1 + Math.floor(Math.random() * 9);
+  const scadenza = Date.now() + 15 * 60 * 1000;
+  const casuale = tokenCasuale().slice(0, 16);
+  const firma = await firmaCaptcha(`${scadenza}.${casuale}.${a + b}`);
+  return json(req, { domanda: `Quanto fa ${NUMERI[a]} più ${NUMERI[b]}?`, token: `${scadenza}.${casuale}.${firma}` });
+}
+
+async function verificaCaptcha(token: unknown, risposta: unknown) {
+  const [scadenza, casuale, firma] = String(token ?? "").split(".");
+  const numero = String(risposta ?? "").trim().toLowerCase();
+  const inLettere = [...NUMERI, "tredici", "quattordici", "quindici", "sedici", "diciassette", "diciotto"];
+  const valore = /^\d{1,2}$/.test(numero) ? Number(numero) : inLettere.indexOf(numero);   // -1 se la parola non è un numero
+  if (!scadenza || !casuale || !firma || Number(scadenza) < Date.now()) throw new HttpError(400, "La verifica è scaduta: rispondi alla nuova domanda");
+  if (!Number.isFinite(valore) || valore < 0 || (await firmaCaptcha(`${scadenza}.${casuale}.${valore}`)) !== firma) {
+    throw new HttpError(400, "Risposta alla verifica non corretta, riprova");
+  }
+}
+
+async function candidatura(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  if (body.sito) throw new HttpError(400, "Richiesta non valida");   // campo trappola anti-bot
+  await verificaCaptcha(body.captcha_token, body.captcha_risposta);
+  const tipo = String(body.tipo ?? "");
+  if (!["medico", "struttura", "medico_hub"].includes(tipo)) throw new HttpError(400, "Indica se sei un medico o una struttura");
+  if (body.consenso_privacy !== true) throw new HttpError(400, "Serve l'accettazione dell'informativa privacy");
+  const email = testo(body.email, "email", 120).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw new HttpError(400, "Email non valida");
+  const telefono = testo(body.telefono, "telefono", 30);
+  if (!/^[+0-9 ().-]{6,30}$/.test(telefono)) throw new HttpError(400, "Telefono non valido");
+  const riga = {
+    tipo, email, telefono,
+    nome: testo(body.nome, "nome", 80),
+    cognome: testo(body.cognome, "cognome", 80, tipo !== "struttura") || null,
+    struttura: testo(body.struttura, "nome della struttura", 160, tipo === "struttura") || null,
+    specializzazione: testo(body.specializzazione, "specializzazione", 120, tipo !== "struttura") || null,
+    citta: testo(body.citta, "città", 80),
+    provincia: testo(body.provincia, "provincia", 40, false) || null,
+    indirizzo: testo(body.indirizzo, "indirizzo", 160, false) || null,
+    partita_iva: testo(body.partita_iva, "partita IVA", 20, false) || null,
+    messaggio: testo(body.messaggio, "messaggio", 2000, false) || null,
+    consenso_privacy_il: new Date().toISOString(),
+  };
+
+  // limiti anti-abuso: 3 richieste al giorno per email, 30 all'ora in totale
+  const unGiornoFa = new Date(Date.now() - 24 * ORA).toISOString(), unOraFa = new Date(Date.now() - ORA).toISOString();
+  const { count: perEmail } = await db.from("candidature").select("id", { count: "exact", head: true }).eq("email", email).gte("creata_il", unGiornoFa);
+  if ((perEmail ?? 0) >= 3) throw new HttpError(429, "Hai già inviato diverse richieste oggi: ti ricontatteremo al più presto");
+  const { count: totali } = await db.from("candidature").select("id", { count: "exact", head: true }).gte("creata_il", unOraFa);
+  if ((totali ?? 0) >= 30) throw new HttpError(429, "Troppe richieste in questo momento, riprova più tardi");
+
+  const { data: salvata, error } = await db.from("candidature").insert(riga).select("id").single();
+  if (error || !salvata) { console.error(error); throw new HttpError(500, "Invio non riuscito, riprova tra poco"); }
+
+  const tipi: Record<string, string> = { medico: "Medico", struttura: "Struttura (hub)", medico_hub: "Medico che vuole fare da hub" };
+  const chi = tipo === "struttura" ? riga.struttura! : `${riga.nome} ${riga.cognome ?? ""}`.trim();
+  try {
+    const destinatario = (await impostazione("email_candidature", "")).trim();
+    if (destinatario) {
+      const r = (k: string, v: string | null) => v ? cella(k, esc(v)) : "";
+      await inviaEmail(destinatario, `Nuova richiesta di adesione: ${chi} (${riga.citta})`, layoutEmail("Nuova richiesta da Lavora con noi", `
+        <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:1.7">
+          ${r("Tipo", tipi[tipo])}${r("Struttura", riga.struttura)}${r("Nome", riga.nome)}${r("Cognome", riga.cognome)}
+          ${r("Specializzazione", riga.specializzazione)}${r("Città", riga.citta)}${r("Provincia", riga.provincia)}${r("Indirizzo", riga.indirizzo)}
+          ${r("Telefono", riga.telefono)}${r("Email", riga.email)}${r("Partita IVA", riga.partita_iva)}
+        </table>
+        ${riga.messaggio ? `<p style="white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px">${esc(riga.messaggio)}</p>` : ""}
+        <p style="color:#64748b;font-size:13px">Rispondendo a questa email scrivi direttamente a ${esc(riga.email)}. La richiesta è salvata anche nell'area riservata, scheda Candidature.</p>`),
+        EMAIL_FROM_ACCOUNT, riga.email);
+    }
+    await inviaEmail(email, "Abbiamo ricevuto la tua richiesta di adesione", layoutEmail("Grazie per il tuo interesse", `
+      <p>Gentile ${esc(chi)},<br>abbiamo ricevuto la tua richiesta per collaborare con Click Dottore.</p>
+      <p>La valuteremo e ti ricontatteremo al più presto all'indirizzo email o al numero di telefono che hai indicato.</p>`), EMAIL_FROM_ACCOUNT);
+  } catch (e) { console.error("Avvisi della candidatura non inviati", e); }
+  return json(req, { ok: true });
+}
+
 async function aggiornaProfilo(req: Request) {
   const id = await pazienteDaToken(req);
   if (!id) throw new HttpError(401, "Accedi di nuovo per modificare i tuoi dati");
@@ -1265,6 +1369,7 @@ Deno.serve(async (req: Request) => {
     if (percorso === "stripe-webhook" && req.method === "POST") return await stripeWebhook(req);
     if (percorso === "stato-prenotazione" && req.method === "GET") return await statoPrenotazione(req);
     if (percorso === "info-bollettino" && req.method === "GET") return await infoBollettino(req);
+    if (percorso === "captcha" && req.method === "GET") return await captcha(req);
     if (req.method !== "POST") throw new HttpError(405, "Metodo non consentito");
     switch (percorso) {
       case "richiesta-online": return await richiestaOnline(req);
@@ -1279,6 +1384,7 @@ Deno.serve(async (req: Request) => {
       case "registrati": return await registrati(req);
       case "aggiorna-profilo": return await aggiornaProfilo(req);
       case "promemoria": return await promemoria(req);
+      case "candidatura": return await candidatura(req);
       default: throw new HttpError(404, "Percorso sconosciuto");
     }
   } catch (e) {

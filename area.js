@@ -19,7 +19,7 @@ const st = {
     pannelloId: null,
     medicoGestito: null,      // medico di cui si modificano orari e tariffe (il proprio, o scelto dall'admin)
     orari: [], chiusure: [],
-    impostazioni: {}, conti: [], regolazioni: [],
+    impostazioni: {}, conti: [], regolazioni: [], candidature: [],
     daConfermare: 0,
 };
 
@@ -126,7 +126,7 @@ function schede() {
     if (r === 'admin' || io.hub_id) elenco.push(['nuova', 'Nuova prenotazione', 'fa-plus']);
     if (r === 'admin' || io.medico_id) elenco.push(['orari', 'Orari', 'fa-clock'], ['tariffe', 'Prestazioni e tariffe', 'fa-tags']);
     if (r === 'admin' || io.hub_id) elenco.push(['conti', r === 'admin' ? 'Conti hub' : 'Conti', 'fa-scale-balanced']);
-    if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['utenze', 'Utenze', 'fa-users'], ['impostazioni', 'Impostazioni', 'fa-gear']);
+    if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['utenze', 'Utenze', 'fa-users'], ['candidature', 'Candidature', 'fa-envelope-open-text'], ['impostazioni', 'Impostazioni', 'fa-gear']);
     if (r === 'operatore') elenco.unshift(elenco.splice(1, 1)[0]);
     $('schede').innerHTML = elenco.map(([id, testo, icona]) => `
         <button type="button" data-scheda="${id}" class="shrink-0 px-4 py-2 rounded-xl text-sm font-medium border transition ${st.scheda === id ? 'bg-skybrand-500 text-white border-transparent' : 'bg-white border-slate-200 text-slate-700 hover:border-skybrand-300'}">
@@ -149,6 +149,7 @@ async function vai(scheda) {
         if (scheda === 'hub') { await caricaHub(); disegnaHub(); }
         if (scheda === 'utenze') { await Promise.all([caricaProfili(), caricaHub(), caricaMedici()]); disegnaUtenze(); }
         if (scheda === 'impostazioni') { await caricaImpostazioni(); disegnaImpostazioni(); }
+        if (scheda === 'candidature') { await caricaCandidature(); disegnaCandidature(); }
     } catch (err) {
         v.innerHTML = '';
         avviso(err.message || 'Caricamento non riuscito');
@@ -889,6 +890,46 @@ function disegnaUtenze() {
         </div>`;
 }
 
+// ---------------------------------------------------------------------
+// Candidature da "Lavora con noi"
+// ---------------------------------------------------------------------
+const STATI_CANDIDATURA = { nuova: 'Nuova', in_valutazione: 'In valutazione', accettata: 'Accettata', rifiutata: 'Rifiutata' };
+const TIPI_CANDIDATURA = { medico: 'Medico', struttura: 'Struttura (hub)', medico_hub: 'Medico che vuole fare da hub' };
+
+async function caricaCandidature() {
+    const [{ data }] = await Promise.all([
+        supabase.from('candidature').select('*').order('creata_il', { ascending: false }).limit(300),
+        caricaImpostazioni(),
+    ]);
+    st.candidature = data || [];
+}
+
+function disegnaCandidature() {
+    const dest = st.impostazioni.email_candidature;
+    $('vista').innerHTML = `
+        <div class="space-y-3 max-w-4xl">
+            <p class="text-sm ${dest ? 'text-slate-500' : 'text-amber-700'}">${dest ? `Le nuove richieste arrivano anche per email a <strong>${esc(dest)}</strong>.` : 'Nessuna email di destinazione impostata: le richieste sono solo qui. Impostala nella scheda Impostazioni.'}</p>
+            ${st.candidature.length ? st.candidature.map((c) => `
+                <div class="${card} space-y-2">
+                    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div>
+                            <div class="font-semibold text-slate-900">${esc(c.tipo === 'struttura' ? c.struttura : `${c.nome} ${c.cognome || ''}`)}</div>
+                            <div class="text-xs text-slate-500">${esc(TIPI_CANDIDATURA[c.tipo] || c.tipo)}${c.specializzazione ? ' · ' + esc(c.specializzazione) : ''} · ${esc(c.citta)}${c.provincia ? ` (${esc(c.provincia)})` : ''} · ${dataOra(c.creata_il)}</div>
+                        </div>
+                        <select data-stato-candidatura="${c.id}" class="${classeCampo} !w-auto !py-1.5 text-xs">${Object.entries(STATI_CANDIDATURA).map(([k, v]) => `<option value="${k}" ${k === c.stato ? 'selected' : ''}>${v}</option>`).join('')}</select>
+                    </div>
+                    <div class="text-sm text-slate-700 flex flex-wrap gap-x-4 gap-y-1">
+                        ${c.tipo === 'struttura' ? `<span>Referente: ${esc(c.nome)} ${esc(c.cognome || '')}</span>` : ''}
+                        <a class="text-skybrand-600" href="mailto:${esc(c.email)}">${esc(c.email)}</a>
+                        <a class="text-skybrand-600" href="tel:${esc(c.telefono)}">${esc(c.telefono)}</a>
+                        ${c.indirizzo ? `<span>${esc(c.indirizzo)}</span>` : ''}
+                        ${c.partita_iva ? `<span>P. IVA ${esc(c.partita_iva)}</span>` : ''}
+                    </div>
+                    ${c.messaggio ? `<p class="text-sm text-slate-600 whitespace-pre-wrap rounded-xl bg-slate-50 border border-slate-200 p-3">${esc(c.messaggio)}</p>` : ''}
+                </div>`).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessuna richiesta ricevuta.</div>`}
+        </div>`;
+}
+
 function disegnaImpostazioni() {
     const i = st.impostazioni;
     $('vista').innerHTML = `
@@ -909,6 +950,12 @@ function disegnaImpostazioni() {
                 <input name="iban" maxlength="40" value="${esc(i.iban_click_dottore ?? '')}" class="${classeCampo} font-mono" style="text-transform:uppercase"></label>
             <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Intestatario</span>
                 <input name="intestatario" maxlength="120" value="${esc(i.intestatario_iban ?? '')}" class="${classeCampo}"></label>
+            <div class="pt-2 border-t border-slate-100">
+                <h2 class="font-bold text-slate-900 mt-2">Richieste da "Lavora con noi"</h2>
+                <p class="text-sm text-slate-500">Indirizzo che riceve per email ogni nuova richiesta di medici e hub. Le richieste restano comunque nella scheda Candidature.</p>
+            </div>
+            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Email di destinazione</span>
+                <input name="email_candidature" type="email" maxlength="120" value="${esc(i.email_candidature ?? '')}" class="${classeCampo}" placeholder="Es. adesioni@clickdottore.it"></label>
             <button type="submit" class="${btnPrimario}">Salva</button>
         </form>`;
 }
@@ -923,7 +970,7 @@ async function inviaAdmin(form) {
     if (azione === 'imposta_impostazioni') {
         dati = {
             azione, quota_cents: Math.round(Number(String(f.quota_euro).replace(',', '.')) * 100),
-            quota_hub_percento: Number(f.quota_hub_percento), iban: f.iban, intestatario: f.intestatario,
+            quota_hub_percento: Number(f.quota_hub_percento), iban: f.iban, intestatario: f.intestatario, email_candidature: f.email_candidature,
         };
     }
     if (azione === 'invita_utente') { dati.hub_id = f.hub_id || null; dati.medico_id = f.medico_id || null; }
@@ -1026,6 +1073,10 @@ document.addEventListener('change', (e) => {
         caricaSlotNuova();
     }
     if (e.target.id === 'medico-gestito') { st.medicoGestito = e.target.value; vai(st.scheda); }
+    if (e.target.dataset.statoCandidatura) {
+        api('admin', { conAccesso: true, dati: { azione: 'stato_candidatura', id: e.target.dataset.statoCandidatura, stato: e.target.value } })
+            .then(() => avviso('Stato aggiornato', 'ok')).catch((err) => avviso(err.message));
+    }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('pannello').hidden) chiudiPannello(); });
 
