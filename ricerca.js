@@ -6,18 +6,43 @@ function pulisci(valore) {
     return String(valore || '').replace(/[%,()"\\*]/g, '%').replace(/\s+/g, ' ').trim();
 }
 
+// testo confrontabile: minuscolo, senza accenti e spazi doppi
+function norm(v) {
+    return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9%]+/g, ' ').trim();
+}
+const PAROLE_VUOTE = new Set(['e', 'ed', 'di', 'del', 'della', 'dei', 'delle', 'la', 'il', 'lo', 'le', 'dott', 'dottor', 'dottore', 'dottoressa', 'dr', 'dssa', 'ssa', 'prof', 'professor', 'professore', 'professoressa']);
+function paroleSignificative(testo) {
+    return norm(testo).replace(/%/g, ' ').split(' ').filter((w) => w.length >= 2 && !PAROLE_VUOTE.has(w)).slice(0, 6);
+}
+// Un medico corrisponde se:
+// - tutte le parole cercate compaiono nel nome e cognome ("Laura Bianchi", "Bianchi", "dott. Rossi"), oppure
+// - la specializzazione cercata contiene quella del medico o viceversa
+//   ("Dermatologia e Venereologia" trova "Dermatologia"; "derma" trova "Dermatologia")
+function corrisponde(m, cercato) {
+    const q = norm(cercato).replace(/%/g, ' ').trim();
+    const parole = paroleSignificative(cercato);
+    if (!q || !parole.length) return true;
+    const nomeCompleto = norm(`${m.nome} ${m.cognome}`);
+    if (parole.every((w) => nomeCompleto.includes(w))) return true;
+    const spec = norm(m.specializzazione);
+    return !!spec && (spec.includes(q) || q.includes(spec));
+}
+
 async function cercaMedici(specialita, luogo) {
     const el = document.getElementById('elenco-medici');
     if (!el) return;
     el.innerHTML = `<div class="col-span-full text-center text-sm text-slate-500 py-10"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Ricerca dei medici...</div>`;
 
-    let q = supabase.from('medici_pubblici').select('*').order('cognome').limit(100);
+    let q = supabase.from('medici_pubblici').select('*').order('cognome').limit(300);
     const s = pulisci(specialita);
-    if (s) q = q.or(`specializzazione.ilike."%${s}%",cognome.ilike."%${s}%",nome.ilike."%${s}%"`);
+    // candidati: medici in cui compare almeno una delle parole cercate (nome, cognome o specializzazione)
+    const parole = paroleSignificative(s);
+    if (parole.length) q = q.or(parole.flatMap((w) => [`specializzazione.ilike."%${w}%"`, `cognome.ilike."%${w}%"`, `nome.ilike."%${w}%"`]).join(','));
     const citta = pulisci(String(luogo || '').replace(/\([^)]*\)/g, ' ').replace(/\b\d{5}\b/g, ' '));
     if (citta) q = q.ilike('citta', `%${citta}%`);
 
-    const { data: medici, error } = await q;
+    const { data: trovati, error } = await q;
+    const medici = s ? (trovati || []).filter((m) => corrisponde(m, s)) : trovati;
     if (error) {
         el.innerHTML = `<div class="col-span-full bg-white border border-slate-200 rounded-2xl p-10 text-center text-sm text-slate-500">Ricerca non riuscita, riprova tra poco.</div>`;
         return;
