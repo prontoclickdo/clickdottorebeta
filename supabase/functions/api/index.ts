@@ -29,6 +29,8 @@ const SITE = (Deno.env.get("SITE_URL") ?? "https://www.clickdottore.it").replace
 // il sito risponde su www.clickdottore.it; clickdottore.it reindirizza lì
 const ALLOWED_ORIGINS = [SITE, "https://www.clickdottore.it", "https://clickdottore.it"];
 const EMAIL_FROM = Deno.env.get("EMAIL_FROM") ?? "Click Dottore <prenotazioni@clickdottore.it>";
+// mittente delle email per scegliere o reimpostare la password (inviti, attivazione account, recupero)
+const EMAIL_FROM_ACCOUNT = Deno.env.get("EMAIL_FROM_ACCOUNT") ?? "Click Dottore <noreply@clickdottore.it>";
 const EMAIL_REPLY_TO = Deno.env.get("EMAIL_REPLY_TO") ?? "";
 
 function secretKey(): string {
@@ -218,14 +220,14 @@ async function firmaStripeValida(raw: string, header: string | null): Promise<bo
 // ---------------------------------------------------------------------
 // Email (Resend)
 // ---------------------------------------------------------------------
-async function inviaEmail(a: string, oggetto: string, html: string) {
+async function inviaEmail(a: string, oggetto: string, html: string, mittente = EMAIL_FROM) {
   const key = Deno.env.get("RESEND_API_KEY");
   if (!key) { console.warn("RESEND_API_KEY mancante: email non inviata a", a); return; }
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      from: EMAIL_FROM, to: [a], subject: oggetto, html,
+      from: mittente, to: [a], subject: oggetto, html,
       ...(EMAIL_REPLY_TO ? { reply_to: EMAIL_REPLY_TO } : {}),
     }),
   });
@@ -1050,7 +1052,7 @@ async function admin(req: Request) {
       await inviaEmail(email, "Il tuo accesso a Click Dottore", layoutEmail("Benvenuto in Click Dottore", `
         <p>Ciao ${esc(nome)},<br>è stata creata per te un'utenza ${ruolo === "admin" ? "di amministratore" : ruolo === "medico" ? "medico" : "di operatore"} su Click Dottore.</p>
         <p>Per attivarla scegli la tua password con il pulsante qui sotto. Il link vale per 24 ore.</p>
-        <p><a href="${esc(link)}" style="display:inline-block;background:#2a71c8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">Scegli la password</a></p>`));
+        <p><a href="${esc(link)}" style="display:inline-block;background:#2a71c8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">Scegli la password</a></p>`), EMAIL_FROM_ACCOUNT);
       await registra(io.id, "invita_utente", null, { email, ruolo });
       return json(req, { ok: true });
     }
@@ -1125,7 +1127,7 @@ async function recuperoPassword(req: Request) {
   await inviaEmail(email, "Reimposta la tua password di Click Dottore", layoutEmail("Reimposta la password", `
     <p>Ciao ${esc(prof.nome)},<br>abbiamo ricevuto una richiesta di reimpostare la password della tua utenza.</p>
     <p><a href="${esc(link)}" style="display:inline-block;background:#2a71c8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">Scegli una nuova password</a></p>
-    <p style="color:#64748b;font-size:13px">Se non sei stato tu, ignora questa email: la password resta quella di prima.</p>`));
+    <p style="color:#64748b;font-size:13px">Se non sei stato tu, ignora questa email: la password resta quella di prima.</p>`), EMAIL_FROM_ACCOUNT);
   await registra(prof.id, "recupero_password", null);
   return rispostaNeutra;
 }
@@ -1208,7 +1210,7 @@ async function registrati(req: Request) {
     <p>Per attivare l'account conferma il tuo indirizzo email e scegli la password con il pulsante qui sotto. Il link vale 24 ore e si può usare una sola volta.</p>
     ${pulsanteEmail(link, "Conferma e scegli la password")}
     <p>Dopo l'attivazione potrai prenotare le visite con i tuoi dati già compilati e ritrovare tutte le tue prenotazioni nella tua area personale.</p>
-    <p style="color:#64748b;font-size:13px">Se non hai chiesto tu la registrazione, ignora questa email: l'account non verrà attivato.</p>`));
+    <p style="color:#64748b;font-size:13px">Se non hai chiesto tu la registrazione, ignora questa email: l'account non verrà attivato.</p>`), EMAIL_FROM_ACCOUNT);
   return rispostaNeutra;
 }
 
