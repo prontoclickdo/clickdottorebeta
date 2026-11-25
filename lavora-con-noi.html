@@ -57,7 +57,7 @@
                 <div data-solo="struttura" hidden class="sm:col-span-2"><label class="block "><span class="block text-xs font-semibold text-slate-600 mb-1">Nome della struttura / ragione sociale</span><input name="struttura" type="text" maxlength="160" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"></label></div>
                 <label class="block "><span class="block text-xs font-semibold text-slate-600 mb-1"><span data-etichetta-nome>Nome</span></span><input name="nome" type="text" maxlength="80" autocomplete="given-name" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"></label>
                 <label class="block "><span class="block text-xs font-semibold text-slate-600 mb-1"><span data-etichetta-cognome>Cognome</span></span><input name="cognome" type="text" maxlength="80" autocomplete="family-name" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"></label>
-                <div data-solo="medico" class="sm:col-span-2"><label class="block "><span class="block text-xs font-semibold text-slate-600 mb-1">Specializzazione</span><input name="specializzazione" type="text" maxlength="120" placeholder="Es. Cardiologia" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"></label></div>
+                <div data-solo="medico" class="sm:col-span-2"><label class="block "><span class="block text-xs font-semibold text-slate-600 mb-1">Specializzazione</span><select name="specializzazione" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"><option value="">Scegli dall'elenco</option></select></label></div>
                 <label class="block "><span class="block text-xs font-semibold text-slate-600 mb-1">Città</span><input name="citta" type="text" maxlength="80" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"></label>
                 <label class="block "><span class="block text-xs font-semibold text-slate-600 mb-1">Provincia</span><input name="provincia" type="text" maxlength="40" placeholder="Es. Matera" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"></label>
                 <div class="sm:col-span-2"><label class="block "><span class="block text-xs font-semibold text-slate-600 mb-1">Indirizzo dello studio o della struttura (facoltativo)</span><input name="indirizzo" type="text" maxlength="160" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400"></label></div>
@@ -92,6 +92,11 @@
             <div>&copy; 2026 - Click Dottore. Tutti i diritti riservati.</div>
         </div>
     </footer>
+    <script src="specializzazioni.js?v=1"></script>
+    <script>
+        document.querySelector('select[name="specializzazione"]')?.insertAdjacentHTML('beforeend',
+            (window.SPECIALIZZAZIONI || []).map((x) => '<option>' + x.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</option>').join(''));
+    </script>
     <script type="module">
         import { api, messaggio } from './app.js';
         const $ = (id) => document.getElementById(id);

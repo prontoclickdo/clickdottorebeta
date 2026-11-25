@@ -816,7 +816,8 @@ function disegnaMedici() {
             <form data-admin="crea_medico" class="${card} space-y-3 lg:col-span-2 self-start">
                 <h2 class="font-bold text-slate-900">Nuovo medico</h2>
                 <div class="grid grid-cols-2 gap-3">${campo('nome', 'Nome', 'text', 'required')}${campo('cognome', 'Cognome', 'text', 'required')}</div>
-                ${campo('specializzazione', 'Specializzazione', 'text', 'required placeholder="Es. Cardiologia"')}
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Specializzazione</span>
+                    <select name="specializzazione" required class="${classeCampo}"><option value="">Scegli dall'elenco</option>${(window.SPECIALIZZAZIONI || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select></label>
                 <div class="grid grid-cols-2 gap-3">${campo('citta', 'Città', 'text', 'required')}${campo('telefono', 'Telefono', 'tel')}</div>
                 ${campo('indirizzo', 'Indirizzo dello studio', 'text', 'placeholder="Comunicato al paziente con la data della visita"')}
                 ${campo('email', 'Email per le notifiche', 'email', 'required')}
