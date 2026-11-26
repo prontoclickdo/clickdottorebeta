@@ -506,6 +506,7 @@ async function avvisaPazienteDaPagare(p: Pren) {
       ${tabellaVisita(p)}
       <p>Per confermare definitivamente la prenotazione paga la quota di <strong>${euro(p.quota_cents)}</strong>
       entro <strong>${esc(dataOra(p.scadenza))}</strong>. Se non paghi entro questo termine l'orario torna disponibile per altri pazienti.</p>
+      ${p.hub ? `<p>Puoi pagare con carta dalla tua area personale oppure di persona, in contanti o con carta, presso <strong>${esc(p.hub.nome)}</strong>${p.hub.indirizzo || p.hub.citta ? ` (${esc([p.hub.indirizzo, p.hub.citta].filter(Boolean).join(", "))})` : ""}.</p>` : ""}
       <p style="color:#64748b;font-size:13px">${esc(TESTO_POLITICA)}</p>
       ${pulsanteEmail(`${SITE}/area-paziente.html`, `Paga ${euro(p.quota_cents)} e conferma`)}`));
 }
@@ -540,7 +541,10 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
   if (opzioni.medico) {
     await inviaEmail(p.medico.email, `Visita confermata ${p.codice}: ${dataOra(p.visita_il)}`, layoutEmail("Visita confermata", `
       <p>Gentile ${esc(nomeMedico(p))},<br>è confermata la visita per <strong>${esc(p.prestazione.nome)}</strong>
-      il <strong>${esc(dataOra(p.visita_il))}</strong>${p.canale === "hub" ? `, registrata da ${esc(p.hub?.nome ?? "una struttura")} dopo averla concordata con te` : ": il paziente ha pagato la quota di prenotazione"}.</p>
+      il <strong>${esc(dataOra(p.visita_il))}</strong>${p.canale === "hub" ? `, registrata da ${esc(p.hub?.nome ?? "una struttura")} dopo averla concordata con te` : ""}${
+        !p.pagata_il ? "" : ["pos", "contanti", "altro"].includes(p.metodo_pagamento)
+          ? `: il ticket è stato pagato presso ${esc(p.hub?.nome ?? "l'hub")}`
+          : ": il paziente ha pagato il ticket di prenotazione"}.</p>
       ${boxCodice(p.codice)}
       <p>I dati del paziente sono nella tua area riservata.</p>
       ${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`));
@@ -600,6 +604,20 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
   });
   if (error) { console.error(error); throw new HttpError(500, "Errore nella conferma del pagamento"); }
   const r = Array.isArray(data) ? data[0] : data;
+  if (r && !r.r_appena_pagata && paymentIntent) {
+    // il ticket risultava già pagato in altro modo (es. in contanti presso l'hub): restituisco il doppio pagamento
+    const { data: gia } = await db.from("prenotazioni").select("id, stripe_payment_intent, stripe_account_id").eq("id", r.r_id).maybeSingle();
+    if (gia && gia.stripe_payment_intent !== paymentIntent) {
+      const { data: fatto } = await db.from("registro").select("id").eq("azione", "rimborso_doppio").eq("prenotazione_id", gia.id)
+        .contains("dettagli", { payment_intent: paymentIntent }).maybeSingle();
+      if (!fatto) {
+        try {
+          await stripe("POST", "refunds", { payment_intent: paymentIntent, metadata: { prenotazione_id: gia.id } }, gia.stripe_account_id);
+          await registra(null, "rimborso_doppio", gia.id, { payment_intent: paymentIntent });
+        } catch (e) { console.error("Rimborso del doppio pagamento non riuscito", e); }
+      }
+    }
+  }
   if (!r?.r_appena_pagata) return r;
   try {
     const p = await caricaPrenotazione(r.r_id);
@@ -1010,13 +1028,28 @@ async function aggiornaPrenotazione(req: Request) {
       return json(req, { ok: true, esito });
     }
     case "registra_incasso": {
-      if (!eAdmin && !eHub) throw new HttpError(403, "Solo l'hub registra gli incassi");
-      if (p.canale !== "hub") throw new HttpError(400, "Le quote online si pagano con Stripe");
-      if (p.pagata_il) throw new HttpError(409, "La quota risulta già pagata");
-      if (!["richiesta", "confermata"].includes(p.stato)) throw new HttpError(409, "Stato non compatibile con l'incasso");
+      // l'hub (o il medico che fa da hub) incassa il ticket in presenza, in contanti o con il proprio POS
+      if (!eAdmin && !eHub) throw new HttpError(403, "Solo l'hub registra l'incasso del ticket");
+      if (p.pagata_il) throw new HttpError(409, "Il ticket risulta già pagato");
+      const online = p.canale === "online";
+      if (online && p.stato !== "da_pagare") {
+        throw new HttpError(409, p.stato === "richiesta" ? "Il ticket si incassa dopo la conferma della richiesta" : "Stato non compatibile con l'incasso");
+      }
+      if (!online && !["richiesta", "confermata"].includes(p.stato)) throw new HttpError(409, "Stato non compatibile con l'incasso");
       const metodo = String(body.metodo_pagamento ?? "");
-      if (!["pos", "contanti", "altro"].includes(metodo)) throw new HttpError(400, "Indica come è stata pagata la quota");
-      await aggiorna({ pagata_il: ora, incassata_da: "hub", metodo_pagamento: metodo });
+      if (!["pos", "contanti", "altro"].includes(metodo)) throw new HttpError(400, "Indica come è stato pagato il ticket");
+      // se il paziente aveva aperto il pagamento online, lo chiudo per evitare un doppio addebito
+      if (p.stripe_session_id && p.stripe_account_id) {
+        try { await stripe("POST", `checkout/sessions/${p.stripe_session_id}/expire`, {}, p.stripe_account_id); } catch (_) { /* già chiusa */ }
+      }
+      const agg = await aggiorna({
+        pagata_il: ora, incassata_da: "hub", metodo_pagamento: metodo,
+        ...(online ? { stato: "confermata", scadenza: null } : {}),
+      });
+      // visita confermata: email al paziente e al medico (che la vede confermata anche nella sua area)
+      if (agg.stato === "confermata") {
+        try { await avvisaVisitaConfermata(agg, { medico: !eMedico }); } catch (e) { console.error("Avvisi non inviati", e); }
+      }
       break;
     }
     case "bollettino": {

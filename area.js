@@ -360,14 +360,16 @@ function apriPannello(id) {
                     <textarea data-motivo-rifiuto rows="2" maxlength="500" placeholder="Motivo del rifiuto (facoltativo, viene comunicato)" class="${classeCampo}"></textarea>
                     <button type="button" data-azione="rifiuta" class="${btnPericolo} w-full">Rifiuta la richiesta</button>
                 </div>` : ''}
-            ${comeHub && p.canale === 'hub' && !p.pagata_il && ['richiesta', 'confermata'].includes(p.stato) ? `
+            ${comeHub && !p.pagata_il && p.quota_cents > 0 && (p.canale === 'hub' ? ['richiesta', 'confermata'].includes(p.stato) : p.stato === 'da_pagare') ? `
                 <div class="rounded-xl border border-slate-200 p-4 space-y-3">
-                    <div class="text-sm font-semibold text-slate-800">Quota di prenotazione (${euro(p.quota_cents)})</div>
+                    <div class="text-sm font-semibold text-slate-800">Ticket di prenotazione (${euro(p.quota_cents)})</div>
+                    <p class="text-xs text-slate-500">Se il paziente paga in presenza, in contanti o con il tuo POS, registra qui l'incasso${p.canale === 'online' ? ': la visita diventa confermata e il medico e il paziente ricevono la conferma via email' : ''}.</p>
                     <div class="flex gap-2">
-                        <select data-metodo class="${classeCampo}"><option value="">Incassata allo sportello con...</option><option value="pos">POS / carta</option><option value="contanti">Contanti</option><option value="altro">Altro</option></select>
-                        <button type="button" data-azione="registra_incasso" class="${btnSecondario} shrink-0">Registra</button>
+                        <select data-metodo class="${classeCampo}"><option value="">Incassato in presenza con...</option><option value="contanti">Contanti</option><option value="pos">POS / carta</option><option value="altro">Altro</option></select>
+                        <button type="button" data-azione="registra_incasso" class="${btnPrimario} shrink-0">Registra il pagamento</button>
                     </div>
-                    ${p.stato === 'confermata'
+                    ${p.canale === 'online' ? '<p class="text-xs text-slate-500">In alternativa il paziente può pagare con carta dalla sua area personale.</p>'
+                        : p.stato === 'confermata'
                         ? `<button type="button" data-bollettino class="${btnSecondario} w-full"><i class="fa-solid fa-qrcode mr-1"></i> Stampa il bollettino da pagare online</button>
                            <p class="text-xs text-slate-500">Il paziente inquadra il QR code e paga con carta quando vuole.</p>`
                         : '<p class="text-xs text-slate-500">Il bollettino da pagare online si stampa dopo la conferma del medico.</p>'}
@@ -416,7 +418,7 @@ async function azionePrenotazione(azione, extra = {}, bottone, id = st.pannelloI
     const testi = {
         conferma: 'Visita confermata: il paziente è stato avvisato', rifiuta: 'Richiesta rifiutata', completa: 'Visita segnata come svolta',
         sposta: 'Visita spostata: il paziente è stato avvisato',
-        annulla: 'Prenotazione annullata', registra_incasso: 'Incasso registrato', segna_rimborsata: 'Rimborso registrato',
+        annulla: 'Prenotazione annullata', registra_incasso: 'Pagamento registrato: il medico vede la visita confermata', segna_rimborsata: 'Rimborso registrato',
     };
     try {
         await api('aggiorna-prenotazione', { conAccesso: true, dati: { id, azione, ...extra } });
@@ -1309,7 +1311,7 @@ document.addEventListener('click', async (e) => {
         if (t.dataset.azione === 'rifiuta') extra.nota = corpo.querySelector('[data-motivo-rifiuto]')?.value;
         if (t.dataset.azione === 'registra_incasso') {
             extra.metodo_pagamento = corpo.querySelector('[data-metodo]')?.value;
-            if (!extra.metodo_pagamento) { $('msg-pannello').hidden = false; return messaggio($('msg-pannello'), 'Scegli come è stata incassata la quota'); }
+            if (!extra.metodo_pagamento) { $('msg-pannello').hidden = false; return messaggio($('msg-pannello'), 'Scegli come è stato pagato il ticket'); }
         }
         return azionePrenotazione(t.dataset.azione, extra, t);
     }
