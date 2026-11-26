@@ -99,8 +99,14 @@
                     <input type="text" name="sito" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
                 </section>
 
+                <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
+                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">4 · Hub di riferimento</h2>
+                    <p class="text-xs text-slate-500 mb-4">L'hub segue la tua prenotazione insieme al medico, incassa il ticket e puoi rivolgerti a lui per qualsiasi necessità.</p>
+                    <div id="hub-scelta"><p class="text-sm text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Carico gli hub...</p></div>
+                </section>
+
                 <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-3 text-sm text-slate-700">
-                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">4 · Consensi</h2>
+                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">5 · Consensi</h2>
                     <label class="flex items-start gap-3"><input type="checkbox" name="consenso_privacy" class="mt-1 w-4 h-4 shrink-0"> <span>Ho letto l'<a href="privacy.html" target="_blank" class="text-skybrand-600 underline">informativa privacy</a> e accetto i <a href="termini.html" target="_blank" class="text-skybrand-600 underline">termini del servizio</a>, compresa la politica di rimborso: la quota si rimborsa solo se annullo almeno 48 ore prima della visita.</span></label>
                     <label class="flex items-start gap-3"><input type="checkbox" name="consenso_dati_sanitari" class="mt-1 w-4 h-4 shrink-0"> <span>Acconsento al trattamento dei dati relativi alla salute, necessario per organizzare la visita con il medico scelto.</span></label>
                 </section>
@@ -153,6 +159,7 @@
         const params = new URLSearchParams(location.search);
         const medicoId = params.get('medico') || '';
         const $ = (id) => document.getElementById(id);
+        let hubs = [], hubScelto = null, hubFisso = false, luogoPaziente = null;
         let medico, prestazioni = [], percento = 10, paziente = null, prestazioneId = null, slotScelto = null, richiesta = null;
         const torna = `prenota.html?medico=${medicoId}`;
 
@@ -217,6 +224,7 @@
                 data_nascita: paziente.data_nascita, telefono: paziente.telefono, email: paziente.email,
             });
             $('modulo').hidden = false;
+            avviaSceltaHub();
             const iniziale = params.get('prestazione') || (pr.length === 1 ? pr[0].id : '');
             const radio = [...document.querySelectorAll('input[name=prestazione_id]')].find((r) => r.value === iniziale);
             if (radio) { radio.checked = true; scegliPrestazione(iniziale); }
@@ -237,6 +245,143 @@
             }
         }
 
+
+        // ---------------- Hub di riferimento ----------------
+        // Se il medico fa anche da hub, l'hub è il suo; altrimenti il paziente sceglie,
+        // con il suggerimento dell'hub del suo comune o del più vicino.
+        const normalizza = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+            .replace(/\([^)]*\)/g, ' ').replace(/['’`´.\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+        const distanza = (a, b) => {
+            const r = Math.PI / 180;
+            const h = Math.sin((b.lat - a.lat) * r / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin((b.lng - a.lng) * r / 2) ** 2;
+            return 12742 * Math.asin(Math.sqrt(h));
+        };
+        let comuni = null, caricamentoComuni = null, suggeriti = [];
+
+        function caricaComuni() {
+            if (caricamentoComuni) return caricamentoComuni;
+            caricamentoComuni = fetch('https://cdn.jsdelivr.net/gh/matteocontrini/comuni-json@master/comuni.json')
+                .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+                .then((dati) => {
+                    comuni = dati.map((c) => {
+                        const nome = String(c.nome || '').split('/')[0].trim();
+                        return { nome, sigla: c.sigla || '', provincia: c.provincia?.nome || '', norm: normalizza(nome) };
+                    });
+                    if (document.activeElement === $('comune-paziente')) suggerisciComuni($('comune-paziente').value);
+                })
+                .catch(() => { caricamentoComuni = null; });
+            return caricamentoComuni;
+        }
+
+        async function geocodifica(nome, provincia) {
+            try {
+                const q = [nome, provincia, 'Italia'].filter(Boolean).join(', ');
+                const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&accept-language=it&q=${encodeURIComponent(q)}`);
+                const [p] = await r.json();
+                return p ? { lat: Number(p.lat), lng: Number(p.lon) } : null;
+            } catch (_) { return null; }
+        }
+
+        // ordine: stesso comune del paziente, poi i più vicini al paziente (o, se non lo conosciamo, al medico)
+        function ordinaHub() {
+            const rif = luogoPaziente?.lat != null ? luogoPaziente : (medico?.lat != null ? { lat: medico.lat, lng: medico.lng } : null);
+            const comune = normalizza(luogoPaziente?.nome || '');
+            return [...hubs].map((h) => ({
+                ...h,
+                stesso: !!comune && normalizza(h.citta) === comune,
+                km: rif && h.lat != null && h.lng != null ? distanza(rif, h) : null,
+            })).sort((a, b) => (b.stesso - a.stesso) || ((a.km ?? 1e9) - (b.km ?? 1e9)) || a.nome.localeCompare(b.nome, 'it'));
+        }
+
+        function disegnaHub(suggerisci = true) {
+            const el = $('hub-scelta');
+            if (hubFisso) {
+                const h = hubs.find((x) => x.id === hubScelto);
+                el.innerHTML = `<div class="rounded-xl border border-skybrand-200 bg-skybrand-50 p-4 text-sm text-slate-700">
+                    <div class="font-semibold text-slate-900"><i class="fa-solid fa-hospital mr-1.5 text-skybrand-600"></i>${esc(h?.nome || 'Studio del medico')}</div>
+                    <div class="text-xs text-slate-500 mt-0.5">${esc([h?.indirizzo, h?.citta].filter(Boolean).join(', '))}</div>
+                    <p class="mt-2">Il Dott. ${esc(medico.cognome)} fa anche da hub: la prenotazione e il ticket sono gestiti direttamente dal suo studio.</p></div>`;
+                return;
+            }
+            if (!hubs.length) {
+                el.innerHTML = '<p class="text-sm text-slate-500">Al momento nessun hub può gestire prenotazioni online: per le prestazioni con ticket riprova tra qualche giorno.</p>';
+                return;
+            }
+            const ordinati = ordinaHub();
+            if (suggerisci || !hubScelto) hubScelto = ordinati[0].id;
+            const etichetta = luogoPaziente ? `vicino a ${esc(luogoPaziente.nome)}` : 'vicino al medico';
+            el.innerHTML = `
+                <label class="block mb-3 relative"><span class="block text-xs font-semibold text-slate-600 mb-1">Il tuo comune (per suggerirti l'hub più comodo)</span>
+                    <input id="comune-paziente" type="text" autocomplete="off" value="${esc(luogoPaziente?.etichetta || '')}" placeholder="Es. Matera" class="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-skybrand-200 focus:border-skybrand-400">
+                    <div id="comuni-suggeriti" hidden class="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto"></div>
+                </label>
+                <div class="space-y-2">${ordinati.map((h, i) => `
+                    <label class="flex items-start gap-3 p-3.5 rounded-xl border ${h.id === hubScelto ? 'border-skybrand-400 bg-skybrand-50/50' : 'border-slate-200'} hover:border-skybrand-300 cursor-pointer transition">
+                        <input type="radio" name="hub_scelto" value="${esc(h.id)}" ${h.id === hubScelto ? 'checked' : ''} class="mt-1 w-4 h-4 shrink-0">
+                        <span class="min-w-0 flex-1"><span class="block font-semibold text-slate-900">${esc(h.nome)}${i === 0 ? ` <span class="ml-1 text-xs font-semibold text-skybrand-700 bg-skybrand-50 border border-skybrand-200 px-2 py-0.5 rounded-full">Suggerito ${h.stesso ? 'nel tuo comune' : etichetta}</span>` : ''}</span>
+                        <span class="block text-xs text-slate-500 mt-0.5">${esc([h.indirizzo, h.citta].filter(Boolean).join(', '))}${h.km != null ? ` · ${h.km < 1 ? 'meno di 1' : Math.round(h.km)} km` : ''}</span></span>
+                    </label>`).join('')}</div>`;
+        }
+
+        function suggerisciComuni(testo) {
+            const box = $('comuni-suggeriti');
+            const q = normalizza(testo);
+            if (!q) { box.hidden = true; return; }   // le proposte compaiono solo dopo almeno una lettera
+            if (!comuni) { caricaComuni(); return; }
+            const inizio = comuni.filter((c) => c.norm.startsWith(q));
+            const parola = comuni.filter((c) => !c.norm.startsWith(q) && c.norm.includes(' ' + q));
+            suggeriti = [...inizio, ...parola].slice(0, 30);
+            box.innerHTML = suggeriti.length ? suggeriti.map((c, i) => `
+                <button type="button" data-comune="${i}" class="w-full text-left px-4 py-2 hover:bg-skybrand-50 text-sm text-slate-700">${esc(c.nome)} <span class="text-slate-400">(${esc(c.sigla)})</span></button>`).join('')
+                : '<div class="px-4 py-3 text-sm text-slate-500">Nessun comune trovato</div>';
+            box.hidden = false;
+        }
+
+        async function scegliComune(c) {
+            $('comuni-suggeriti').hidden = true;
+            const etichetta = `${c.nome} (${c.sigla})`;
+            $('comune-paziente').value = etichetta;
+            const pos = await geocodifica(c.nome, c.provincia);
+            luogoPaziente = { nome: c.nome, etichetta, lat: pos?.lat ?? null, lng: pos?.lng ?? null };
+            disegnaHub(true);
+        }
+
+        async function avviaSceltaHub() {
+            const { data: elenco } = await supabase.from('hub_prenotabili').select('*').order('nome');
+            hubs = (elenco || []).map((h) => ({ ...h, lat: h.lat != null ? Number(h.lat) : null, lng: h.lng != null ? Number(h.lng) : null }));
+            if (medico.hub_proprio && hubs.some((h) => h.id === medico.hub_proprio)) {
+                hubFisso = true; hubScelto = medico.hub_proprio;
+                return disegnaHub();
+            }
+            // comune ricordato dall'ultima prenotazione del paziente
+            if (paziente?.citta) {
+                const nome = String(paziente.citta).replace(/\s*\([^)]*\)\s*$/, '').trim();
+                const sigla = (String(paziente.citta).match(/\(([^)]+)\)\s*$/) || [])[1] || '';
+                luogoPaziente = { nome, etichetta: paziente.citta, lat: null, lng: null };
+                disegnaHub(true);
+                const pos = await geocodifica(nome, sigla);
+                if (pos) { luogoPaziente = { ...luogoPaziente, ...pos }; }
+            }
+            disegnaHub(true);
+        }
+
+        document.addEventListener('focusin', (e) => { if (e.target.id === 'comune-paziente') caricaComuni(); });
+        document.addEventListener('input', (e) => { if (e.target.id === 'comune-paziente') suggerisciComuni(e.target.value); });
+        document.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-comune]');
+            if (b) return scegliComune(suggeriti[Number(b.dataset.comune)]);
+            if (!e.target.closest('#comune-paziente, #comuni-suggeriti') && $('comuni-suggeriti')) $('comuni-suggeriti').hidden = true;
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.target.id === 'comune-paziente' && e.key === 'Enter') {
+                e.preventDefault();
+                if (suggeriti[0] && !$('comuni-suggeriti').hidden) scegliComune(suggeriti[0]);
+            }
+        });
+        document.addEventListener('change', (e) => {
+            if (e.target.name === 'hub_scelto') { hubScelto = e.target.value; disegnaHub(false); }
+        });
+
         function nonTrovato() { $('caricamento').hidden = true; $('non-trovato').hidden = false; }
 
         $('modulo').addEventListener('change', (e) => {
@@ -255,7 +400,12 @@
             if (errori.length) { $('errori-modulo').hidden = false; messaggio($('errori-modulo'), errori); return; }
             $('errori-modulo').hidden = true;
 
-            richiesta = { prestazione_id: prestazioneId, inizio: slotScelto, paziente: dati, note, consenso_privacy: true, consenso_dati_sanitari: true, sito: form.sito.value };
+            const hubR = hubs.find((h) => h.id === hubScelto);
+            if (hubs.length && !hubR) { $('errori-modulo').hidden = false; messaggio($('errori-modulo'), ['Scegli l\'hub di riferimento']); return; }
+            richiesta = {
+                prestazione_id: prestazioneId, inizio: slotScelto, paziente: dati, note, consenso_privacy: true, consenso_dati_sanitari: true, sito: form.sito.value,
+                hub_id: hubFisso ? undefined : (hubScelto || undefined), citta_paziente: luogoPaziente?.etichetta || undefined,
+            };
             const pr = prestazioni.find((p) => p.id === prestazioneId);
             const riga = (k, v) => `<div><dt class="text-xs text-slate-500">${k}</dt><dd class="font-medium text-slate-900 break-words">${esc(v)}</dd></div>`;
             $('riepilogo-dati').innerHTML = [
@@ -265,6 +415,7 @@
                 riga('Durata', durata(pr?.durata_minuti || 30)),
                 pr?.prezzo_visita_cents != null ? riga('Tariffa della visita', euro(pr.prezzo_visita_cents)) : '',
                 ticket(pr) ? riga('Ticket di prenotazione', `${euro(ticket(pr))} (${percentoTesto(percento)} della tariffa)`) : '',
+                hubR ? riga('Hub di riferimento', `${hubR.nome}${hubR.citta ? ` · ${hubR.citta}` : ''}`) : '',
                 riga('Paziente', `${dati.nome} ${dati.cognome}`),
                 riga('Codice fiscale', dati.codice_fiscale),
                 riga('Data di nascita', data(dati.data_nascita)),

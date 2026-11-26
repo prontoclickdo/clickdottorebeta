@@ -338,17 +338,30 @@ function distanzaKm(a: { lat: number; lng: number }, b: { lat: number; lng: numb
   return 12742 * Math.asin(Math.sqrt(h));
 }
 // deno-lint-ignore no-explicit-any
-async function hubDiRiferimento(medico_id: string): Promise<any | null> {
-  const { data: m } = await db.from("medici").select("id, citta, lat, lng").eq("id", medico_id).maybeSingle();
-  if (!m) return null;
+type R = any;
+// Hub che possono gestire prenotazioni online: attivi, con abbonamento valido e Stripe pronto
+async function hubIdonei(): Promise<R[]> {
   const [{ data: elenco }, { data: abb }] = await Promise.all([
     db.from("hub").select("*").eq("attivo", true).eq("stripe_pronto", true).not("stripe_account_id", "is", null).order("creato_il"),
     db.from("abbonamenti").select("hub_id, esente, stato").not("hub_id", "is", null),
   ]);
-  // deno-lint-ignore no-explicit-any
-  type R = any;
   const validi = new Set((abb ?? []).filter((a: R) => a.esente || STATI_VALIDI.includes(a.stato)).map((a: R) => a.hub_id));
-  const candidati: R[] = (elenco ?? []).filter((h: R) => validi.has(h.id));
+  return (elenco ?? []).filter((h: R) => validi.has(h.id));
+}
+
+// Hub del medico stesso, se ha un'utenza "medico che fa anche da hub" ed è idoneo
+async function hubProprioDelMedico(medico_id: string): Promise<R | null> {
+  const { data: prof } = await db.from("profili").select("hub_id").eq("ruolo", "medico_hub").eq("attivo", true).eq("medico_id", medico_id);
+  const ids = new Set((prof ?? []).map((p: R) => p.hub_id));
+  if (!ids.size) return null;
+  return (await hubIdonei()).find((h) => ids.has(h.id)) ?? null;
+}
+
+// Hub di riferimento quando il paziente non ne sceglie uno: quello della città del medico o il più vicino
+async function hubDiRiferimento(medico_id: string): Promise<R | null> {
+  const { data: m } = await db.from("medici").select("id, citta, lat, lng").eq("id", medico_id).maybeSingle();
+  if (!m) return null;
+  const candidati = await hubIdonei();
   if (!candidati.length) return null;
   const citta = normCitta(m.citta);
   const stessa = candidati.find((h: R) => citta && normCitta(h.citta) === citta);
@@ -479,7 +492,7 @@ async function avvisaPazienteRichiesta(p: Pren) {
   await inviaEmail(p.paziente_email, `Richiesta inviata ${p.codice}`, layoutEmail("Richiesta di prenotazione inviata", `
     <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>abbiamo inoltrato la tua richiesta al medico.</p>
     ${boxCodice(p.codice)}
-    ${tabellaVisita(p)}
+    ${tabellaVisita(p, p.hub ? cella("Hub", `${esc(p.hub.nome)}${p.hub.citta ? `, ${esc(p.hub.citta)}` : ""}`) : "")}
     <p>Non devi pagare nulla adesso. Riceverai un'email appena il medico conferma: da quel momento avrai 24 ore per pagare
     la quota di prenotazione di ${euro(p.quota_cents)} dalla tua area personale.</p>
     ${pulsanteEmail(`${SITE}/area-paziente.html`, "Vai alla tua area")}`));
@@ -703,7 +716,17 @@ async function richiestaOnline(req: Request) {
 
   const slot = await verificaSlot(prestazione_id, body.inizio);
   const quota = await ticketPrestazione(prestazione_id);
-  const hub = await hubDiRiferimento(slot.medico_id);
+  // hub che gestisce la richiesta e incassa il ticket:
+  // 1) quello del medico, se il medico fa anche da hub; 2) quello scelto dal paziente; 3) quello di riferimento del medico
+  let hub = await hubProprioDelMedico(slot.medico_id);
+  if (!hub && body.hub_id) {
+    const scelto = uuid(body.hub_id, "hub");
+    hub = (await hubIdonei()).find((h) => h.id === scelto) ?? null;
+    if (!hub) throw new HttpError(409, "L'hub scelto non può più gestire prenotazioni online: scegline un altro");
+  }
+  if (!hub) hub = await hubDiRiferimento(slot.medico_id);
+  const cittaPaziente = testo(body.citta_paziente, "comune", 80, false);
+  if (cittaPaziente) await db.from("pazienti").update({ citta: cittaPaziente }).eq("id", paziente_id);
   if (!hub && quota > 0) {
     throw new HttpError(503, "Le prenotazioni online per questo medico non sono ancora attive: nessun hub della zona ha completato l'adesione. Riprova tra qualche giorno.");
   }
