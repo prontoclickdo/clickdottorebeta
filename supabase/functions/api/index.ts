@@ -162,7 +162,7 @@ async function registra(utente: string | null, azione: string, prenotazione_id: 
 // Utente autenticato (personale)
 // ---------------------------------------------------------------------
 type Profilo = {
-  id: string; ruolo: "admin" | "operatore" | "medico"; nome: string; email: string;
+  id: string; ruolo: "admin" | "operatore" | "medico" | "medico_hub"; nome: string; email: string;
   hub_id: string | null; medico_id: string | null; attivo: boolean;
 };
 
@@ -918,7 +918,7 @@ async function aggiornaPrenotazione(req: Request) {
 
   const eAdmin = io.ruolo === "admin";
   const eMedico = io.medico_id !== null && io.medico_id === p.medico_id;
-  const eHub = io.hub_id !== null && io.hub_id === p.hub_id;
+  const eHub = ["operatore", "medico_hub"].includes(io.ruolo) && io.hub_id !== null && io.hub_id === p.hub_id;
   if (!eAdmin && !eMedico && !eHub) throw new HttpError(403, "Non puoi modificare questa prenotazione");
 
   const ora = new Date().toISOString();
@@ -1251,11 +1251,12 @@ async function admin(req: Request) {
       const email = testo(body.email, "email", 120).toLowerCase();
       const nome = testo(body.nome, "nome", 120);
       const ruolo = String(body.ruolo ?? "");
-      if (!["admin", "operatore", "medico"].includes(ruolo)) throw new HttpError(400, "Ruolo non valido");
-      const hub_id = body.hub_id ? uuid(body.hub_id, "hub") : null;
-      const medico_id = body.medico_id ? uuid(body.medico_id, "medico") : null;
-      if (ruolo === "operatore" && !hub_id) throw new HttpError(400, "L'operatore deve essere collegato a un hub");
-      if (ruolo === "medico" && !medico_id) throw new HttpError(400, "Scegli il medico collegato all'utenza");
+      if (!["admin", "operatore", "medico", "medico_hub"].includes(ruolo)) throw new HttpError(400, "Ruolo non valido");
+      // ogni ruolo ha solo i collegamenti che gli spettano: il medico puro non ha un hub
+      const hub_id = ["operatore", "medico_hub"].includes(ruolo) && body.hub_id ? uuid(body.hub_id, "hub") : null;
+      const medico_id = ["medico", "medico_hub"].includes(ruolo) && body.medico_id ? uuid(body.medico_id, "medico") : null;
+      if (["operatore", "medico_hub"].includes(ruolo) && !hub_id) throw new HttpError(400, "Scegli l'hub collegato all'utenza");
+      if (["medico", "medico_hub"].includes(ruolo) && !medico_id) throw new HttpError(400, "Scegli il medico collegato all'utenza");
 
       const { link, userId } = await linkAccesso("invite", email);
       const { error } = await db.from("profili").insert({ id: userId, ruolo, nome, email, hub_id, medico_id });
@@ -1265,7 +1266,7 @@ async function admin(req: Request) {
         throw new HttpError(500, "Impossibile creare il profilo");
       }
       await inviaEmail(email, "Il tuo accesso a Click Dottore", layoutEmail("Benvenuto in Click Dottore", `
-        <p>Ciao ${esc(nome)},<br>è stata creata per te un'utenza ${ruolo === "admin" ? "di amministratore" : ruolo === "medico" ? "medico" : "di operatore"} su Click Dottore.</p>
+        <p>Ciao ${esc(nome)},<br>è stata creata per te un'utenza ${ruolo === "admin" ? "di amministratore" : ruolo === "medico" ? "medico" : ruolo === "medico_hub" ? "di medico e hub" : "di hub"} su Click Dottore.</p>
         <p>Per attivarla scegli la tua password con il pulsante qui sotto. Il link vale per 24 ore.</p>
         <p><a href="${esc(link)}" style="display:inline-block;background:#2a71c8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:bold">Scegli la password</a></p>`), EMAIL_FROM_ACCOUNT);
       await registra(io.id, "invita_utente", null, { email, ruolo });
@@ -1592,7 +1593,8 @@ type Riga = any;
 
 function soggetto(io: Profilo): Soggetto {
   if (io.ruolo === "medico" && io.medico_id) return { hub_id: null, medico_id: io.medico_id };
-  if (io.ruolo === "operatore" && io.hub_id) return { hub_id: io.hub_id, medico_id: null };
+  // operatore e medico che fa da hub: l'abbonamento è quello dell'hub
+  if ((io.ruolo === "operatore" || io.ruolo === "medico_hub") && io.hub_id) return { hub_id: io.hub_id, medico_id: null };
   throw new HttpError(400, "Questa utenza non richiede un abbonamento");
 }
 
@@ -1842,9 +1844,13 @@ async function cambiaPiano(req: Request) {
 // ---------------------------------------------------------------------
 // deno-lint-ignore no-explicit-any
 async function hubDellUtente(io: Profilo, body: Record<string, unknown>): Promise<any> {
-  let hubId = io.hub_id;
+  // solo l'utenza dell'hub (o del medico che fa anche da hub) collega il conto e incassa i ticket
+  if (!["operatore", "medico_hub", "admin"].includes(io.ruolo)) {
+    throw new HttpError(403, "Solo l'utenza dell'hub può collegare il conto Stripe e incassare i ticket");
+  }
+  let hubId = io.ruolo === "admin" ? null : io.hub_id;
   if (io.ruolo === "admin" && body.hub_id) hubId = uuid(body.hub_id, "hub");
-  if (!hubId) throw new HttpError(403, "Solo gli hub collegano un conto Stripe per incassare i ticket");
+  if (!hubId) throw new HttpError(403, "Solo l'utenza dell'hub può collegare il conto Stripe e incassare i ticket");
   const { data: hub } = await db.from("hub").select("*").eq("id", hubId).maybeSingle();
   if (!hub) throw new HttpError(404, "Hub non trovato");
   return hub;

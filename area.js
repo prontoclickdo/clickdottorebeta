@@ -5,7 +5,7 @@ import {
 } from './app.js?v=5';
 
 const $ = (id) => document.getElementById(id);
-const RUOLI = { admin: 'Amministratore', operatore: 'Operatore', medico: 'Medico' };
+const RUOLI = { admin: 'Amministratore', operatore: 'Hub', medico: 'Medico', medico_hub: 'Medico e hub' };
 const ATTIVE = ['richiesta', 'da_pagare', 'confermata'];
 const CHIUSE = ['completata', 'annullata', 'rimborsata', 'rifiutata', 'scaduta'];
 const GIORNI = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
@@ -114,8 +114,9 @@ async function contaRichieste() {
     if (!st.io?.medico_id && !st.io?.hub_id) return 0;
     let q = supabase.from('prenotazioni').select('id', { count: 'exact', head: true })
         .eq('stato', 'richiesta').gt('scadenza', new Date().toISOString());
-    // il medico conferma le proprie richieste, l'hub quelle dei medici della sua zona
-    q = st.io.medico_id ? q.eq('medico_id', st.io.medico_id) : q.eq('hub_id', st.io.hub_id);
+    // il medico conferma le proprie richieste, l'hub quelle dei medici della sua zona (il medico che fa da hub entrambe)
+    q = st.io.medico_id && st.io.hub_id ? q.or(`medico_id.eq.${st.io.medico_id},hub_id.eq.${st.io.hub_id}`)
+        : st.io.medico_id ? q.eq('medico_id', st.io.medico_id) : q.eq('hub_id', st.io.hub_id);
     const { count } = await q;
     st.daConfermare = count || 0;
     disegnaAvvisoRichieste();
@@ -198,7 +199,7 @@ async function caricaPrenotazioni() {
     const ora = Date.now();
     st.prenotazioni = (righe || []).map((p) => (['richiesta', 'da_pagare'].includes(p.stato) && p.scadenza && new Date(p.scadenza).getTime() < ora ? { ...p, stato: 'scaduta' } : p));
     if (st.io.medico_id || st.io.hub_id) {
-        st.daConfermare = st.prenotazioni.filter((p) => p.stato === 'richiesta' && (st.io.medico_id ? p.medico_id === st.io.medico_id : p.hub_id === st.io.hub_id)).length;
+        st.daConfermare = st.prenotazioni.filter((p) => p.stato === 'richiesta' && ((st.io.medico_id && p.medico_id === st.io.medico_id) || (st.io.hub_id && p.hub_id === st.io.hub_id))).length;
         disegnaAvvisoRichieste();
     }
 }
@@ -918,10 +919,11 @@ function disegnaUtenze() {
                 ${campo('nome', 'Nome e cognome', 'text', 'required')}
                 ${campo('email', 'Email', 'email', 'required')}
                 <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Ruolo</span>
-                    <select name="ruolo" class="${classeCampo}"><option value="operatore">Operatore di un hub</option><option value="medico">Medico</option><option value="admin">Amministratore</option></select></label>
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Hub (obbligatorio per l'operatore; per il medico solo se fa da hub)</span>
+                    <select name="ruolo" class="${classeCampo}"><option value="operatore">Hub</option><option value="medico">Medico</option><option value="medico_hub">Medico che fa anche da hub</option><option value="admin">Amministratore</option></select></label>
+                <p class="text-xs text-slate-500">Solo le utenze "Hub" e "Medico che fa anche da hub" collegano il conto Stripe e incassano i ticket; il medico vede soltanto se il ticket è stato pagato.</p>
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Hub collegato (per "Hub" e "Medico che fa anche da hub")</span>
                     <select name="hub_id" class="${classeCampo}"><option value="">Nessuno</option>${st.hub.map((h) => `<option value="${h.id}">${esc(h.nome)} (${esc(h.codice)})</option>`).join('')}</select></label>
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Medico collegato (per il ruolo medico)</span>
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Medico collegato (per "Medico" e "Medico che fa anche da hub")</span>
                     <select name="medico_id" class="${classeCampo}"><option value="">Nessuno</option>${st.medici.map((m) => `<option value="${m.id}">Dott. ${esc(m.cognome)} ${esc(m.nome)} · ${esc(m.specializzazione)}</option>`).join('')}</select></label>
                 <button type="submit" class="${btnPrimario} w-full">Crea e invia l'invito</button>
             </form>
