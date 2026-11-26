@@ -147,13 +147,13 @@
         </div>
     </footer>
     <script type="module">
-        import { supabase, api, esc, euro, data, quando, durata, quotaCents, htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, slotLiberi, selettoreSlot, seguiCambioUtente } from './app.js?v=4';
+        import { supabase, api, esc, euro, data, quando, durata, ticketPercento, ticketDi, percentoTesto, htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, slotLiberi, selettoreSlot, seguiCambioUtente } from './app.js?v=5';
         seguiCambioUtente();
 
         const params = new URLSearchParams(location.search);
         const medicoId = params.get('medico') || '';
         const $ = (id) => document.getElementById(id);
-        let medico, prestazioni = [], quota = null, paziente = null, prestazioneId = null, slotScelto = null, richiesta = null;
+        let medico, prestazioni = [], percento = 10, paziente = null, prestazioneId = null, slotScelto = null, richiesta = null;
         const torna = `prenota.html?medico=${medicoId}`;
 
         function testata(staff) {
@@ -163,9 +163,11 @@
                    <a href="registrati.html" class="px-3.5 py-2 bg-skybrand-500 hover:bg-skybrand-600 text-white font-semibold rounded-xl transition">Registrati</a>`;
         }
 
+        const ticket = (p) => ticketDi(p?.prezzo_visita_cents, percento);
         const infoPrestazione = (p) => [
             `Durata ${durata(p.durata_minuti || 30)}`,
             p.prezzo_visita_cents != null ? `tariffa della visita ${euro(p.prezzo_visita_cents)}` : '',
+            ticket(p) ? `ticket di prenotazione ${euro(ticket(p))}` : '',
         ].filter(Boolean).join(' · ');
 
         async function avvia() {
@@ -184,10 +186,10 @@
             const [{ data: m }, { data: pr }, q] = await Promise.all([
                 supabase.from('medici_pubblici').select('*').eq('id', medicoId).maybeSingle(),
                 supabase.from('prestazioni_pubbliche').select('*').eq('medico_id', medicoId).order('nome'),
-                quotaCents(),
+                ticketPercento(),
             ]);
             if (!m || !pr || !pr.length) return nonTrovato();
-            medico = m; prestazioni = pr; quota = q;
+            medico = m; prestazioni = pr; percento = q;
             $('medico-nome').textContent = `Dott. ${m.nome} ${m.cognome}`;
             $('medico-info').textContent = `${m.specializzazione} · ${m.citta}`;
             $('caricamento').hidden = true;
@@ -202,7 +204,7 @@
                 return;
             }
 
-            $('quota-info').textContent = quota ? ` (${euro(quota)})` : '';
+            $('quota-info').textContent = ` (il ${percentoTesto(percento)} della tariffa della visita)`;
             $('prestazioni').innerHTML = pr.map((p) => `
                 <label class="flex items-start gap-3 p-3.5 rounded-xl border border-slate-200 hover:border-skybrand-300 cursor-pointer transition">
                     <input type="radio" name="prestazione_id" value="${esc(p.id)}" class="mt-1 w-4 h-4 shrink-0">
@@ -222,6 +224,8 @@
 
         async function scegliPrestazione(id) {
             prestazioneId = id;
+            const scelta = prestazioni.find((p) => p.id === id);
+            $('quota-info').textContent = scelta && ticket(scelta) ? ` di ${euro(ticket(scelta))}` : ` (il ${percentoTesto(percento)} della tariffa della visita)`;
             slotScelto = null;
             $('slot').innerHTML = '<p class="text-sm text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Carico gli orari liberi...</p>';
             try {
@@ -260,6 +264,7 @@
                 riga('Data e ora', quando(slotScelto)),
                 riga('Durata', durata(pr?.durata_minuti || 30)),
                 pr?.prezzo_visita_cents != null ? riga('Tariffa della visita', euro(pr.prezzo_visita_cents)) : '',
+                ticket(pr) ? riga('Ticket di prenotazione', `${euro(ticket(pr))} (${percentoTesto(percento)} della tariffa)`) : '',
                 riga('Paziente', `${dati.nome} ${dati.cognome}`),
                 riga('Codice fiscale', dati.codice_fiscale),
                 riga('Data di nascita', data(dati.data_nascita)),
@@ -267,7 +272,7 @@
                 riga('Email', dati.email),
                 note ? riga('Note', note) : '',
             ].join('');
-            $('riepilogo-quota').textContent = quota ? ` di ${euro(quota)}` : '';
+            $('riepilogo-quota').textContent = ticket(pr) ? ` di ${euro(ticket(pr))}` : '';
             form.hidden = true;
             $('riepilogo').hidden = false;
             messaggio($('errori-invio'), '');

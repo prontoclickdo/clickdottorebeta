@@ -20,6 +20,9 @@
 //   POST /api/candidatura             richiesta di adesione di un medico o di un hub
 //   POST /api/promemoria              promemoria al paziente il giorno prima della visita (chiamato ogni ora da pg_cron)
 //   POST /api/stato-abbonamento       stato dell'abbonamento mensile del medico o dell'hub
+//   POST /api/collega-stripe          l'hub collega o completa il proprio conto Stripe (Stripe Connect)
+//   POST /api/stato-stripe-hub        stato del conto Stripe collegato dell'hub
+//   POST /api/verifica-pagamenti      controlla con Stripe i ticket pagati sui conti degli hub (ogni 5 minuti da pg_cron)
 //   POST /api/abbonati                avvia l'abbonamento mensile (Stripe Checkout)
 //   POST /api/portale-abbonamento     metodo di pagamento, fatture e disdetta (portale clienti Stripe)
 //   POST /api/cambia-piano            passaggio a un altro piano
@@ -138,6 +141,19 @@ async function quotaCents(): Promise<number> {
   return n;
 }
 
+// Ticket di prenotazione: percentuale (impostazione ticket_percento, 10%) della tariffa della prestazione.
+// Sotto 0,50 € (minimo di Stripe) il ticket è zero e la prenotazione non richiede pagamento.
+async function ticketPercento(): Promise<number> {
+  const { data } = await db.from("impostazioni").select("valore").eq("chiave", "ticket_percento").maybeSingle();
+  const n = Number(data?.valore ?? "10");
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : 10;
+}
+async function ticketPrestazione(prestazione_id: string): Promise<number> {
+  const { data } = await db.from("prestazioni").select("prezzo_visita_cents").eq("id", prestazione_id).maybeSingle();
+  const t = Math.round(Number(data?.prezzo_visita_cents ?? 0) * (await ticketPercento()) / 100);
+  return t >= 50 ? t : 0;
+}
+
 async function registra(utente: string | null, azione: string, prenotazione_id: string | null, dettagli: unknown = null) {
   await db.from("registro").insert({ utente, azione, prenotazione_id, dettagli });
 }
@@ -210,7 +226,8 @@ function appiattisci(obj: unknown, prefisso: string, out: URLSearchParams) {
   }
 }
 
-async function stripe(metodo: "GET" | "POST", percorso: string, params?: Record<string, unknown>) {
+// account: conto Stripe collegato di un hub (Stripe Connect) su cui eseguire la chiamata
+async function stripe(metodo: "GET" | "POST", percorso: string, params?: Record<string, unknown>, account?: string | null) {
   const key = Deno.env.get("STRIPE_SECRET_KEY");
   if (!key) throw new HttpError(503, "Pagamenti non ancora configurati");
   const body = new URLSearchParams();
@@ -218,13 +235,18 @@ async function stripe(metodo: "GET" | "POST", percorso: string, params?: Record<
   const url = `https://api.stripe.com/v1/${percorso}` + (metodo === "GET" && params ? `?${body}` : "");
   const r = await fetch(url, {
     method: metodo,
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded",
+      ...(account ? { "Stripe-Account": account } : {}),
+    },
     body: metodo === "POST" ? body : undefined,
   });
   const dati = await r.json();
   if (!r.ok) {
     console.error("Errore Stripe", dati?.error);
-    throw new HttpError(502, "Errore del servizio di pagamento");
+    const e = new HttpError(502, "Errore del servizio di pagamento");
+    (e as HttpError & { dettaglio?: string }).dettaglio = dati?.error?.message;
+    throw e;
   }
   return dati;
 }
@@ -304,6 +326,43 @@ async function impostazione(chiave: string, predefinito = ""): Promise<string> {
 async function percentualeHub(): Promise<number> {
   const n = parseInt(await impostazione("quota_hub_percento", "80"), 10);
   return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 80;
+}
+
+// Hub di riferimento di un medico: quello della stessa città, altrimenti il più vicino.
+// Sono aderenti gli hub attivi, con abbonamento valido e conto Stripe pronto a ricevere i ticket.
+const normCitta = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  .replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+function distanzaKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const r = Math.PI / 180;
+  const h = Math.sin((b.lat - a.lat) * r / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin((b.lng - a.lng) * r / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+// deno-lint-ignore no-explicit-any
+async function hubDiRiferimento(medico_id: string): Promise<any | null> {
+  const { data: m } = await db.from("medici").select("id, citta, lat, lng").eq("id", medico_id).maybeSingle();
+  if (!m) return null;
+  const [{ data: elenco }, { data: abb }] = await Promise.all([
+    db.from("hub").select("*").eq("attivo", true).eq("stripe_pronto", true).not("stripe_account_id", "is", null).order("creato_il"),
+    db.from("abbonamenti").select("hub_id, esente, stato").not("hub_id", "is", null),
+  ]);
+  // deno-lint-ignore no-explicit-any
+  type R = any;
+  const validi = new Set((abb ?? []).filter((a: R) => a.esente || STATI_VALIDI.includes(a.stato)).map((a: R) => a.hub_id));
+  const candidati: R[] = (elenco ?? []).filter((h: R) => validi.has(h.id));
+  if (!candidati.length) return null;
+  const citta = normCitta(m.citta);
+  const stessa = candidati.find((h: R) => citta && normCitta(h.citta) === citta);
+  if (stessa) return stessa;
+  let pos = m.lat != null && m.lng != null ? { lat: Number(m.lat), lng: Number(m.lng) } : null;
+  if (!pos) {
+    pos = await geolocalizza(null, m.citta);
+    if (pos) await db.from("medici").update(pos).eq("id", m.id);
+  }
+  const conCoordinate = candidati.filter((h: R) => h.lat != null && h.lng != null);
+  if (!pos || !conCoordinate.length) return candidati[0];
+  const punto = pos;
+  return conCoordinate.reduce((meglio: R, h: R) =>
+    distanzaKm(punto, { lat: h.lat, lng: h.lng }) < distanzaKm(punto, { lat: meglio.lat, lng: meglio.lng }) ? h : meglio);
 }
 
 function tokenCasuale(): string {
@@ -386,6 +445,36 @@ async function avvisaMedicoRichiesta(p: Pren) {
       ${pulsanteEmail(`${SITE}/area.html`, "Conferma o rifiuta")}`));
 }
 
+// L'hub di riferimento riceve le richieste online dei medici della sua zona (senza dati del paziente nell'email)
+async function avvisaHubRichiesta(p: Pren) {
+  if (!p.hub?.email) return;
+  await inviaEmail(p.hub.email, `Nuova richiesta online ${p.codice}: ${nomeMedico(p)}`, layoutEmail("Nuova richiesta per un medico della tua zona", `
+    <p>È arrivata una richiesta online per <strong>${esc(nomeMedico(p))}</strong> (${esc(p.medico.citta)}):
+    <strong>${esc(p.prestazione.nome)}</strong> il <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
+    ${boxCodice(p.codice)}
+    <p>Come hub di riferimento incassi il ticket di ${euro(p.quota_cents)} quando il paziente paga. Dall'area riservata puoi vedere i dati
+    del paziente e, sentito il medico, confermare la richiesta, spostare la data o annullarla.</p>
+    ${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`));
+}
+
+async function avvisaSpostamento(p: Pren, vecchia: string, opzioni: { medico: boolean; hub: boolean }) {
+  const righe = cella("Prima era", esc(dataOra(vecchia)));
+  await inviaEmail(p.paziente_email, `Visita spostata ${p.codice}: ${dataOra(p.visita_il)}`, layoutEmail("La data della tua visita è cambiata", `
+    <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>${esc(nomeMedico(p))} ha spostato la tua ${p.stato === "richiesta" ? "richiesta" : "visita"}
+    al <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
+    ${boxCodice(p.codice)}
+    ${tabellaVisita(p, righe)}
+    <p>Se il nuovo orario non ti va bene puoi annullare dalla tua area personale${p.canale === "hub" ? ` o rivolgendoti a ${esc(p.hub?.nome ?? "la struttura")}` : ""}.</p>
+    <p style="color:#64748b;font-size:13px">${esc(TESTO_POLITICA)}</p>
+    ${p.canale === "online" ? pulsanteEmail(`${SITE}/area-paziente.html`, "Vai alla tua area") : ""}`));
+  const avviso = layoutEmail("Visita spostata", `
+    <p>La ${p.stato === "richiesta" ? "richiesta" : "visita"} per <strong>${esc(p.prestazione.nome)}</strong> con ${esc(nomeMedico(p))}
+    è stata spostata dal ${esc(dataOra(vecchia))} al <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
+    ${boxCodice(p.codice)}${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`);
+  if (opzioni.medico) await inviaEmail(p.medico.email, `Visita spostata ${p.codice}`, avviso);
+  if (opzioni.hub && p.hub?.email) await inviaEmail(p.hub.email, `Visita spostata ${p.codice}`, avviso);
+}
+
 async function avvisaPazienteRichiesta(p: Pren) {
   await inviaEmail(p.paziente_email, `Richiesta inviata ${p.codice}`, layoutEmail("Richiesta di prenotazione inviata", `
     <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>abbiamo inoltrato la tua richiesta al medico.</p>
@@ -409,7 +498,7 @@ async function avvisaPazienteDaPagare(p: Pren) {
 }
 
 async function avvisaRifiuto(p: Pren) {
-  const motivo = p.motivo_rifiuto ? `<p>Motivo indicato dal medico: ${esc(p.motivo_rifiuto)}</p>` : "";
+  const motivo = p.motivo_rifiuto ? `<p>Motivo: ${esc(p.motivo_rifiuto)}</p>` : "";
   if (p.canale === "online") {
     await inviaEmail(p.paziente_email, `Richiesta non accettata ${p.codice}`, layoutEmail("Il medico non può accettare la richiesta", `
       <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>${esc(nomeMedico(p))} non può accettare la richiesta per ${esc(dataOra(p.visita_il))}.</p>
@@ -456,8 +545,14 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
 // ---------------------------------------------------------------------
 // Pagamenti Stripe
 // ---------------------------------------------------------------------
+// Il ticket si paga direttamente sul conto Stripe dell'hub (Stripe Connect, addebito diretto):
+// l'hub lo incassa per intero e ne sostiene le commissioni; Click Dottore non trattiene nulla.
 async function creaCheckout(p: Pren, cancelUrl: string): Promise<string> {
   if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(503, "I pagamenti online non sono ancora attivi, riprova più tardi");
+  const conto = p.hub?.stripe_pronto && p.hub?.stripe_account_id ? p.hub.stripe_account_id as string : null;
+  if (!conto) {
+    throw new HttpError(409, `${p.hub?.nome ? esc(p.hub.nome) : "L'hub di riferimento"} non ha ancora attivato i pagamenti online: riprova più tardi o contatta l'hub`);
+  }
   const sessione = await stripe("POST", "checkout/sessions", {
     mode: "payment",
     locale: "it",
@@ -472,15 +567,17 @@ async function creaCheckout(p: Pren, cancelUrl: string): Promise<string> {
         currency: "eur",
         unit_amount: p.quota_cents,
         product_data: {
-          name: `Quota di prenotazione ${p.codice}`,
+          name: `Ticket di prenotazione ${p.codice}`,
           description: `${p.prestazione.nome} - ${nomeMedico(p)} - ${dataOra(p.visita_il)}`,
         },
       },
     }],
     metadata: { prenotazione_id: p.id },
-    payment_intent_data: { metadata: { prenotazione_id: p.id }, description: `Click Dottore ${p.codice}` },
-  });
-  await db.from("prenotazioni").update({ stripe_session_id: sessione.id }).eq("id", p.id);
+    payment_intent_data: { metadata: { prenotazione_id: p.id }, description: `Ticket Click Dottore ${p.codice}` },
+  }, conto);
+  await db.from("prenotazioni").update({
+    stripe_session_id: sessione.id, stripe_account_id: conto, aggiornata_il: new Date().toISOString(),
+  }).eq("id", p.id);
   return sessione.url;
 }
 
@@ -495,7 +592,7 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
     const p = await caricaPrenotazione(r.r_id);
     if (p.canale === "online" && p.stato !== "confermata") {
       // pagata dopo la scadenza e orario non più libero: rimborso automatico
-      if (paymentIntent) await stripe("POST", "refunds", { payment_intent: paymentIntent, metadata: { prenotazione_id: p.id } });
+      if (paymentIntent) await stripe("POST", "refunds", { payment_intent: paymentIntent, metadata: { prenotazione_id: p.id } }, p.stripe_account_id);
       await db.from("prenotazioni").update({ stato: "rimborsata", aggiornata_il: new Date().toISOString() }).eq("id", p.id);
       await inviaEmail(p.paziente_email, `Pagamento rimborsato ${p.codice}`, layoutEmail("Pagamento rimborsato", `
         <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>il pagamento è arrivato dopo la scadenza e nel frattempo l'orario
@@ -503,6 +600,11 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
         ${pulsanteEmail(`${SITE}/`, "Scegli un altro orario")}`));
     } else if (p.canale === "online") {
       await avvisaVisitaConfermata(p, { medico: true });
+      if (p.hub?.email) {
+        await inviaEmail(p.hub.email, `Ticket incassato ${p.codice}`, layoutEmail("Ticket incassato", `
+          <p>Il paziente ha pagato il ticket di <strong>${euro(p.quota_cents)}</strong> per la visita con ${esc(nomeMedico(p))}
+          del ${esc(dataOra(p.visita_il))}: l'importo è sul tuo conto Stripe.</p>${boxCodice(p.codice)}`));
+      }
     } else {
       await inviaEmail(p.paziente_email, `Quota pagata ${p.codice}`, layoutEmail("Quota di prenotazione pagata", `
         <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>abbiamo ricevuto il pagamento della quota di ${euro(p.quota_cents)}.</p>
@@ -510,7 +612,7 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
       if (p.hub?.email) {
         await inviaEmail(p.hub.email, `Bollettino pagato ${p.codice}`, layoutEmail("Bollettino pagato online", `
           <p>Il paziente ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)} ha pagato online la quota di ${euro(p.quota_cents)}.</p>
-          ${boxCodice(p.codice)}<p>La tua parte (${euro(p.quota_hub_cents)}) compare nel saldo della scheda Conti.</p>`));
+          ${boxCodice(p.codice)}<p>${p.stripe_account_id ? "L'importo è stato accreditato sul tuo conto Stripe." : `La tua parte (${euro(p.quota_hub_cents)}) compare nel saldo della scheda Conti.`}</p>`));
       }
     }
   } catch (e) { console.error("Avvisi dopo il pagamento non inviati", e); }
@@ -520,11 +622,11 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
 async function statoPrenotazione(req: Request) {
   const sessionId = new URL(req.url).searchParams.get("session_id") ?? "";
   if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(sessionId)) throw new HttpError(400, "Sessione non valida");
-  const campi = "id, codice, stato, canale, quota_cents, pagata_il, visita_il, medico:medici(nome, cognome, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)";
+  const campi = "id, codice, stato, canale, quota_cents, pagata_il, visita_il, stripe_account_id, medico:medici(nome, cognome, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)";
   let { data: p } = await db.from("prenotazioni").select(campi).eq("stripe_session_id", sessionId).maybeSingle();
   if (!p || !p.pagata_il) {
-    // il webhook potrebbe non essere ancora arrivato: controllo direttamente con Stripe
-    const s = await stripe("GET", `checkout/sessions/${sessionId}`);
+    // il pagamento potrebbe non essere ancora registrato: controllo direttamente con Stripe (sul conto dell'hub)
+    const s = await stripe("GET", `checkout/sessions/${sessionId}`, undefined, p?.stripe_account_id ?? null);
     const pid = s.metadata?.prenotazione_id ?? s.client_reference_id;
     if (pid && s.payment_status === "paid") await confermaPagamento(pid, sessionId, s.payment_intent ?? null);
     if (pid) ({ data: p } = await db.from("prenotazioni").select(campi).eq("id", pid).maybeSingle());
@@ -535,6 +637,26 @@ async function statoPrenotazione(req: Request) {
     // deno-lint-ignore no-explicit-any
     medico: (p as any).medico, prestazione: (p as any).prestazione?.nome,
   });
+}
+
+// I pagamenti sui conti degli hub non arrivano al webhook di Click Dottore: ogni 5 minuti pg_cron
+// chiama questo percorso, che controlla con Stripe le sessioni di pagamento ancora aperte
+async function verificaPagamenti(req: Request) {
+  const da = new Date(Date.now() - 3 * 24 * ORA).toISOString();
+  const { data: righe } = await db.from("prenotazioni").select("id, stripe_session_id, stripe_account_id")
+    .is("pagata_il", null).not("stripe_session_id", "is", null).not("stripe_account_id", "is", null)
+    .gte("aggiornata_il", da).limit(50);
+  let confermati = 0;
+  for (const r of righe ?? []) {
+    try {
+      const s = await stripe("GET", `checkout/sessions/${r.stripe_session_id}`, undefined, r.stripe_account_id);
+      if (s.payment_status === "paid") {
+        await confermaPagamento(r.id, s.id, s.payment_intent ?? null);
+        confermati++;
+      }
+    } catch (e) { console.error("Verifica pagamento non riuscita", r.id, e); }
+  }
+  return json(req, { controllate: righe?.length ?? 0, confermati });
 }
 
 async function stripeWebhook(req: Request) {
@@ -580,7 +702,11 @@ async function richiestaOnline(req: Request) {
   if ((count ?? 0) >= 5) throw new HttpError(429, "Hai già 5 richieste in attesa: aspetta la risposta dei medici o annullane qualcuna");
 
   const slot = await verificaSlot(prestazione_id, body.inizio);
-  const quota = await quotaCents();
+  const quota = await ticketPrestazione(prestazione_id);
+  const hub = await hubDiRiferimento(slot.medico_id);
+  if (!hub && quota > 0) {
+    throw new HttpError(503, "Le prenotazioni online per questo medico non sono ancora attive: nessun hub della zona ha completato l'adesione. Riprova tra qualche giorno.");
+  }
   const { data: codice, error: errCodice } = await db.rpc("genera_codice", { p_canale: "online", p_hub_codice: null });
   if (errCodice || !codice) throw new HttpError(500, "Impossibile generare il codice");
 
@@ -589,7 +715,7 @@ async function richiestaOnline(req: Request) {
     paziente_nome: paziente.nome, paziente_cognome: paziente.cognome,
     paziente_codice_fiscale: paziente.codice_fiscale, paziente_data_nascita: paziente.data_nascita,
     paziente_telefono: paziente.telefono, paziente_email: paziente.email, note,
-    consenso_privacy: true, consenso_dati_sanitari: true, quota_cents: quota,
+    consenso_privacy: true, consenso_dati_sanitari: true, quota_cents: quota, quota_hub_cents: quota, hub_id: hub?.id ?? null,
     stato: "richiesta", visita_il: slot.inizio.toISOString(), visita_fine: slot.fine.toISOString(),
     scadenza: scadenzaRisposta(slot.inizio).toISOString(),
   }).select("id, codice").single();
@@ -599,6 +725,7 @@ async function richiestaOnline(req: Request) {
   try {
     const p = await caricaPrenotazione(pren.id);
     await avvisaMedicoRichiesta(p);
+    await avvisaHubRichiesta(p);
     await avvisaPazienteRichiesta(p);
   } catch (e) { console.error("Avvisi non inviati", e); }
   return json(req, { id: pren.id, codice: pren.codice });
@@ -614,6 +741,14 @@ async function paga(req: Request) {
   if (p.pagata_il) throw new HttpError(409, "La quota è già stata pagata");
   if (p.stato === "scaduta") throw new HttpError(409, "Il tempo per pagare è scaduto e l'orario è tornato libero: invia una nuova richiesta");
   if (p.stato !== "da_pagare") throw new HttpError(409, "Questa prenotazione non è in attesa di pagamento");
+  if (!p.hub_id) {
+    // richieste inviate prima dell'introduzione degli hub di riferimento: si assegnano ora
+    const hub = await hubDiRiferimento(p.medico_id);
+    if (hub) {
+      await db.from("prenotazioni").update({ hub_id: hub.id, quota_hub_cents: p.quota_cents }).eq("id", p.id);
+      p.hub_id = hub.id; p.hub = hub;
+    }
+  }
   const url = await creaCheckout(p, `${SITE}/area-paziente.html`);
   // l'orario resta riservato mentre il paziente completa il pagamento
   const tieni = new Date(Date.now() + 35 * 60 * 1000);
@@ -631,10 +766,11 @@ async function eseguiAnnullamento(p: Pren, causa: "paziente" | "struttura", moti
   let esito: EsitoRimborso;
   if (!p.pagata_il) esito = "nessun_pagamento";
   else if (causa === "paziente" && !rimborsabile(p)) esito = "trattenuta";
-  else if (p.incassata_da === "click_dottore" && p.stripe_payment_intent) esito = "stripe";
+  else if (p.stripe_payment_intent && (p.stripe_account_id || p.incassata_da === "click_dottore")) esito = "stripe";
   else esito = "hub";
   if (esito === "stripe") {
-    await stripe("POST", "refunds", { payment_intent: p.stripe_payment_intent, metadata: { prenotazione_id: p.id } });
+    // pagamento sul conto dell'hub: il rimborso parte da lì
+    await stripe("POST", "refunds", { payment_intent: p.stripe_payment_intent, metadata: { prenotazione_id: p.id } }, p.stripe_account_id);
   }
   const { error } = await db.from("prenotazioni").update({
     stato: esito === "stripe" ? "rimborsata" : "annullata", scadenza: null,
@@ -654,7 +790,7 @@ function testoRimborso(p: Pren, esito: EsitoRimborso): string {
   }
 }
 
-async function avvisaAnnullamento(p: Pren, esito: EsitoRimborso, motivo: string | null, opzioni: { paziente: boolean; medico: boolean; daPaziente?: boolean }) {
+async function avvisaAnnullamento(p: Pren, esito: EsitoRimborso, motivo: string | null, opzioni: { paziente: boolean; medico: boolean; hub?: boolean; daPaziente?: boolean }) {
   if (opzioni.paziente) {
     await inviaEmail(p.paziente_email, `Prenotazione annullata ${p.codice}`, layoutEmail("La tua prenotazione è stata annullata", `
       <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>la prenotazione per <strong>${esc(p.prestazione.nome)}</strong>
@@ -665,6 +801,12 @@ async function avvisaAnnullamento(p: Pren, esito: EsitoRimborso, motivo: string 
     await inviaEmail(p.medico.email, `Prenotazione annullata ${p.codice}`, layoutEmail("Prenotazione annullata", `
       <p>Gentile ${esc(nomeMedico(p))},<br>la ${p.stato === "richiesta" ? "richiesta" : "prenotazione"} per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))}
       è stata annullata${opzioni.daPaziente ? " dal paziente" : p.canale === "hub" ? ` da ${esc(p.hub?.nome ?? "l'hub")}` : ""}. L'orario è di nuovo disponibile.</p>${boxCodice(p.codice)}`));
+  }
+  if (opzioni.hub && p.hub?.email) {
+    await inviaEmail(p.hub.email, `Prenotazione annullata ${p.codice}`, layoutEmail("Prenotazione annullata", `
+      <p>La ${p.stato === "richiesta" ? "richiesta" : "prenotazione"} per <strong>${esc(p.prestazione.nome)}</strong> con ${esc(nomeMedico(p))}
+      del ${esc(dataOra(p.visita_il))} è stata annullata${opzioni.daPaziente ? " dal paziente" : ""}.</p>${boxCodice(p.codice)}
+      <p>${esito === "stripe" ? `Il ticket di ${euro(p.quota_cents)} è stato rimborsato automaticamente dal tuo conto Stripe.` : esito === "trattenuta" ? "Annullata a meno di 48 ore dalla visita: il ticket non è rimborsabile." : esito === "hub" ? "Se avevi incassato il ticket allo sportello, restituiscilo al paziente e segnalo come rimborsato." : "Il ticket non era stato pagato."}</p>`));
   }
 }
 
@@ -681,7 +823,7 @@ async function annullaRichiestaPaziente(req: Request) {
     throw new HttpError(409, "Mancano meno di 48 ore alla visita: annullando, la quota non sarà rimborsata. Conferma per procedere.");
   }
   const esito = await eseguiAnnullamento(p, "paziente", null, paziente_id);
-  await avvisaAnnullamento(p, esito, null, { paziente: !!p.pagata_il, medico: true, daPaziente: true });
+  await avvisaAnnullamento(p, esito, null, { paziente: !!p.pagata_il, medico: true, hub: true, daPaziente: true });
   return json(req, { ok: true, esito });
 }
 
@@ -734,8 +876,8 @@ async function prenotaHub(req: Request) {
   const giaConfermata = body.gia_confermata === true;
   const slot = await verificaSlot(prestazione_id, body.inizio);
 
-  const quota = await quotaCents();
-  const quotaHub = Math.round(quota * (await percentualeHub()) / 100);
+  const quota = await ticketPrestazione(prestazione_id);
+  const quotaHub = quota;   // il ticket spetta per intero all'hub
   const { data: codice, error: errCodice } = await db.rpc("genera_codice", { p_canale: "hub", p_hub_codice: hub.codice });
   if (errCodice || !codice) throw new HttpError(500, "Impossibile generare il codice");
   const ora = new Date().toISOString();
@@ -789,25 +931,42 @@ async function aggiornaPrenotazione(req: Request) {
 
   switch (azione) {
     case "conferma": {
-      if (!eAdmin && !eMedico) throw new HttpError(403, "Solo il medico può confermare");
       if (p.stato === "scaduta") throw new HttpError(409, "La richiesta è scaduta e l'orario è tornato libero");
       if (p.stato !== "richiesta") throw new HttpError(409, "La richiesta non è in attesa di conferma");
-      if (p.canale === "online") {
+      if (p.canale === "online" && !(p.quota_cents > 0)) {
+        // prestazione senza tariffa: nessun ticket da pagare, la visita è subito confermata
+        const agg = await aggiorna({ stato: "confermata", confermata_il: ora, scadenza: null });
+        await avvisaVisitaConfermata(agg, { medico: !eMedico });
+      } else if (p.canale === "online") {
         const scadenza = minimo(new Date(Date.now() + 24 * ORA), new Date(p.visita_il));
         const agg = await aggiorna({ stato: "da_pagare", confermata_il: ora, scadenza: scadenza.toISOString() });
         await avvisaPazienteDaPagare(agg);
       } else {
         const agg = await aggiorna({ stato: "confermata", confermata_il: ora, scadenza: null });
-        await avvisaVisitaConfermata(agg, { hub: true });
+        await avvisaVisitaConfermata(agg, { hub: !eHub, medico: !eMedico });
       }
       break;
     }
     case "rifiuta": {
-      if (!eAdmin && !eMedico) throw new HttpError(403, "Solo il medico può rifiutare");
       if (p.stato !== "richiesta") throw new HttpError(409, "La richiesta non è in attesa di conferma");
       const motivo = testo(body.nota, "motivo", 500, false) || null;
       const agg = await aggiorna({ stato: "rifiutata", motivo_rifiuto: motivo, scadenza: null });
       await avvisaRifiuto(agg);
+      break;
+    }
+    case "sposta": {
+      if (!["richiesta", "da_pagare", "confermata"].includes(p.stato)) throw new HttpError(409, "Si possono spostare solo le prenotazioni attive");
+      if (p.visita_il && new Date(p.visita_il).getTime() < Date.now()) throw new HttpError(409, "La visita è già passata");
+      const slot = await verificaSlot(p.prestazione_id, body.inizio);
+      const campi: Record<string, unknown> = { visita_il: slot.inizio.toISOString(), visita_fine: slot.fine.toISOString() };
+      if (p.stato === "richiesta" && p.scadenza) campi.scadenza = minimo(new Date(p.scadenza), new Date(slot.inizio.getTime() - ORA)).toISOString();
+      if (p.stato === "da_pagare" && p.scadenza) campi.scadenza = minimo(new Date(p.scadenza), slot.inizio).toISOString();
+      const { data, error } = await db.from("prenotazioni").update({ ...campi, aggiornata_il: ora }).eq("id", id).select("*").single();
+      if (error) erroreInserimento(error);
+      await registra(io.id, "sposta", id, { da: p.visita_il, a: campi.visita_il });
+      try {
+        await avvisaSpostamento({ ...p, ...data }, p.visita_il, { medico: !eMedico, hub: !eHub && !!p.hub });
+      } catch (e) { console.error("Avvisi non inviati", e); }
       break;
     }
     case "completa": {
@@ -823,7 +982,7 @@ async function aggiornaPrenotazione(req: Request) {
       const causa = body.causa === "paziente" ? "paziente" : "struttura";
       const esito = await eseguiAnnullamento(p, causa, motivo, io.id);
       await avvisaAnnullamento(p, esito, motivo, {
-        paziente: p.canale === "online" || p.stato === "confermata", medico: !eMedico, daPaziente: causa === "paziente",
+        paziente: p.canale === "online" || p.stato === "confermata", medico: !eMedico, hub: !eHub, daPaziente: causa === "paziente",
       });
       return json(req, { ok: true, esito });
     }
@@ -851,7 +1010,7 @@ async function aggiornaPrenotazione(req: Request) {
       return json(req, { url: `${SITE}/paga.html?t=${token}` });
     }
     case "segna_rimborsata": {
-      if (p.canale !== "hub") throw new HttpError(400, "I rimborsi online sono automatici");
+      if (p.canale !== "hub" || p.stripe_payment_intent) throw new HttpError(400, "I rimborsi dei pagamenti online sono automatici");
       if (!eAdmin && !eHub) throw new HttpError(403, "Solo l'hub può segnare il rimborso");
       if (p.stato !== "annullata" || p.incassata_da !== "hub") throw new HttpError(409, "Non c'è una quota incassata da rimborsare");
       if (p.quota_trattenuta) throw new HttpError(409, "Annullata a meno di 48 ore dalla visita su richiesta del paziente: la quota non è rimborsabile");
@@ -1113,6 +1272,11 @@ async function admin(req: Request) {
       return json(req, { ok: true });
     }
     case "imposta_impostazioni": {
+      if (body.ticket_percento !== undefined) {
+        const pct = Number(String(body.ticket_percento).replace(",", "."));
+        if (!Number.isFinite(pct) || pct <= 0 || pct > 100) throw new HttpError(400, "Percentuale del ticket non valida (da 0,1 a 100)");
+        await db.from("impostazioni").upsert({ chiave: "ticket_percento", valore: String(Math.round(pct * 10) / 10) });
+      }
       if (body.quota_cents !== undefined) {
         const cents = Math.round(Number(body.quota_cents));
         if (!Number.isFinite(cents) || cents < 50 || cents > 10000) throw new HttpError(400, "Quota non valida (da 0,50 € a 100 €)");
@@ -1674,6 +1838,70 @@ async function cambiaPiano(req: Request) {
 }
 
 // ---------------------------------------------------------------------
+// Conto Stripe dell'hub (Stripe Connect): l'hub riceve i ticket direttamente
+// ---------------------------------------------------------------------
+// deno-lint-ignore no-explicit-any
+async function hubDellUtente(io: Profilo, body: Record<string, unknown>): Promise<any> {
+  let hubId = io.hub_id;
+  if (io.ruolo === "admin" && body.hub_id) hubId = uuid(body.hub_id, "hub");
+  if (!hubId) throw new HttpError(403, "Solo gli hub collegano un conto Stripe per incassare i ticket");
+  const { data: hub } = await db.from("hub").select("*").eq("id", hubId).maybeSingle();
+  if (!hub) throw new HttpError(404, "Hub non trovato");
+  return hub;
+}
+
+async function stripeConDettaglio(...a: Parameters<typeof stripe>) {
+  try { return await stripe(...a); } catch (e) {
+    const d = (e as HttpError & { dettaglio?: string }).dettaglio;
+    throw d ? new HttpError(502, `Stripe: ${d}`) : e;
+  }
+}
+
+async function collegaStripe(req: Request) {
+  const io = await utente(req);
+  const body = await req.json().catch(() => ({}));
+  const hub = await hubDellUtente(io, body);
+  let conto: string | null = hub.stripe_account_id;
+  if (!conto) {
+    // conto Stripe completo intestato all'hub: è l'hub a incassare, gestire rimborsi e pagare le commissioni
+    const acc = await stripeConDettaglio("POST", "accounts", {
+      country: "IT",
+      email: hub.email || io.email,
+      business_profile: { name: hub.nome, product_description: "Ticket di prenotazione di visite mediche tramite Click Dottore" },
+      controller: {
+        stripe_dashboard: { type: "full" }, fees: { payer: "account" },
+        losses: { payments: "stripe" }, requirement_collection: "stripe",
+      },
+      metadata: { hub_id: hub.id, hub_codice: hub.codice },
+    });
+    conto = acc.id as string;
+    await db.from("hub").update({ stripe_account_id: conto, stripe_pronto: false }).eq("id", hub.id);
+    await registra(io.id, "collega_stripe", null, { hub_id: hub.id, conto });
+  }
+  const link = await stripeConDettaglio("POST", "account_links", {
+    account: conto, type: "account_onboarding",
+    refresh_url: `${SITE}/area.html?stripe=riprova`, return_url: `${SITE}/area.html?stripe=fatto`,
+  });
+  return json(req, { url: link.url });
+}
+
+async function statoStripeHub(req: Request) {
+  const io = await utente(req);
+  const body = await req.json().catch(() => ({}));
+  const hub = await hubDellUtente(io, body);
+  if (!hub.stripe_account_id) return json(req, { collegato: false, pronto: false });
+  const acc = await stripeConDettaglio("GET", `accounts/${hub.stripe_account_id}`);
+  const pronto = !!acc.charges_enabled;
+  if (pronto !== hub.stripe_pronto) await db.from("hub").update({ stripe_pronto: pronto }).eq("id", hub.id);
+  return json(req, {
+    collegato: true, pronto,
+    dati_inviati: !!acc.details_submitted,
+    accrediti_attivi: !!acc.payouts_enabled,
+    da_completare: (acc.requirements?.currently_due ?? []).length,
+  });
+}
+
+// ---------------------------------------------------------------------
 // Smistamento delle richieste
 // ---------------------------------------------------------------------
 Deno.serve(async (req: Request) => {
@@ -1700,6 +1928,9 @@ Deno.serve(async (req: Request) => {
       case "promemoria": return await promemoria(req);
       case "candidatura": return await candidatura(req);
       case "stato-abbonamento": return await statoAbbonamento(req);
+      case "collega-stripe": return await collegaStripe(req);
+      case "stato-stripe-hub": return await statoStripeHub(req);
+      case "verifica-pagamenti": return await verificaPagamenti(req);
       case "abbonati": return await abbonati(req);
       case "portale-abbonamento": return await portaleAbbonamento(req);
       case "cambia-piano": return await cambiaPiano(req);

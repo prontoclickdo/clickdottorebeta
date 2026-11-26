@@ -41,6 +41,18 @@ export async function quotaCents() {
     return riga ? parseInt(riga.valore, 10) : null;
 }
 
+// Ticket di prenotazione: percentuale della tariffa della prestazione (sotto 0,50 € non si paga nulla)
+export async function ticketPercento() {
+    const { data: riga } = await supabase.from('impostazioni').select('valore').eq('chiave', 'ticket_percento').maybeSingle();
+    const n = Number(riga?.valore ?? 10);
+    return Number.isFinite(n) && n > 0 && n <= 100 ? n : 10;
+}
+export function ticketDi(prezzoCents, percento) {
+    const t = Math.round(Number(prezzoCents || 0) * percento / 100);
+    return t >= 50 ? t : 0;
+}
+export const percentoTesto = (n) => `${String(n).replace('.', ',')}%`;
+
 export const STATI = {
     richiesta: ['Da confermare', 'bg-amber-50 text-amber-700'],
     da_pagare: ['Confermata, quota da pagare', 'bg-skybrand-50 text-skybrand-700'],

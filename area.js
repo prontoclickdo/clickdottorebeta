@@ -1,8 +1,8 @@
 // Click Dottore - area riservata (amministratore, operatori degli hub, medici)
 import {
-    supabase, api, esc, euro, dataOra, data, quando, durata, quotaCents, badgeStato,
+    supabase, api, esc, euro, dataOra, data, quando, durata, ticketPercento, ticketDi, percentoTesto, badgeStato,
     htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, classeCampo, slotLiberi, selettoreSlot, seguiCambioUtente,
-} from './app.js?v=4';
+} from './app.js?v=5';
 
 const $ = (id) => document.getElementById(id);
 const RUOLI = { admin: 'Amministratore', operatore: 'Operatore', medico: 'Medico' };
@@ -12,7 +12,7 @@ const GIORNI = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sa
 const METODI = { pos: 'POS / carta', contanti: 'contanti', altro: 'altro', stripe: 'carta online', bollettino: 'bollettino online' };
 
 const st = {
-    io: null, scheda: null, quota: null,
+    io: null, scheda: null, percento: 10, stripeHub: null,
     prenotazioni: [], filtro: 'attive', cerca: '',
     medici: [], prestazioni: [], hub: [], profili: [],
     nuova: { medicoId: null, cercaMedico: '', hubId: null, prestazioneId: null, slot: null, esito: null },
@@ -58,7 +58,7 @@ async function avvia() {
         <button type="button" data-esci class="px-3 py-2 border border-slate-300 rounded-xl text-slate-700 hover:border-skybrand-400 transition"><i class="fa-solid fa-right-from-bracket"></i><span class="hidden sm:inline ml-1.5">Esci</span></button>`;
     if (!profilo || !profilo.attivo) { $('bloccato').hidden = false; return; }
     st.io = profilo;
-    st.quota = await quotaCents();
+    st.percento = await ticketPercento();
     st.medicoGestito = profilo.medico_id || null;
 
     const dove = profilo.ruolo === 'admin' ? 'Click Dottore'
@@ -92,12 +92,18 @@ async function avvia() {
 
     if (profilo.ruolo === 'admin') await Promise.all([caricaHub(), caricaMedici(), caricaProfili()]);
     else await caricaMedici();
-    if (profilo.medico_id) {
+    if (profilo.medico_id || profilo.hub_id) {
         await contaRichieste();
         setInterval(controllaNuoveRichieste, 60000);
         document.addEventListener('visibilitychange', () => { if (!document.hidden) controllaNuoveRichieste(); });
     }
     if (st.daConfermare) st.filtro = 'da_confermare';
+    if (profilo.hub_id && profilo.ruolo !== 'admin') {
+        const ritorno = new URLSearchParams(location.search).get('stripe');
+        if (ritorno) history.replaceState(null, '', location.pathname);
+        await caricaStatoStripe();
+        if (ritorno) return vai('incassi');
+    }
     vai(profilo.ruolo === 'operatore' ? 'nuova' : 'prenotazioni');
 }
 
@@ -105,9 +111,12 @@ async function avvia() {
 // Avviso delle nuove richieste per il medico
 // ---------------------------------------------------------------------
 async function contaRichieste() {
-    if (!st.io?.medico_id) return 0;
-    const { count } = await supabase.from('prenotazioni').select('id', { count: 'exact', head: true })
-        .eq('medico_id', st.io.medico_id).eq('stato', 'richiesta').gt('scadenza', new Date().toISOString());
+    if (!st.io?.medico_id && !st.io?.hub_id) return 0;
+    let q = supabase.from('prenotazioni').select('id', { count: 'exact', head: true })
+        .eq('stato', 'richiesta').gt('scadenza', new Date().toISOString());
+    // il medico conferma le proprie richieste, l'hub quelle dei medici della sua zona
+    q = st.io.medico_id ? q.eq('medico_id', st.io.medico_id) : q.eq('hub_id', st.io.hub_id);
+    const { count } = await q;
     st.daConfermare = count || 0;
     disegnaAvvisoRichieste();
     return st.daConfermare;
@@ -142,7 +151,8 @@ function schede() {
     const elenco = [['prenotazioni', 'Prenotazioni', 'fa-list-check']];
     if (r === 'admin' || io.hub_id) elenco.push(['nuova', 'Nuova prenotazione', 'fa-plus']);
     if (r === 'admin' || io.medico_id) elenco.push(['orari', 'Orari', 'fa-clock'], ['tariffe', 'Prestazioni e tariffe', 'fa-tags']);
-    if (r === 'admin' || io.hub_id) elenco.push(['conti', r === 'admin' ? 'Conti hub' : 'Conti', 'fa-scale-balanced']);
+    if (r === 'admin') elenco.push(['conti', 'Conti hub (storico)', 'fa-scale-balanced']);
+    else if (io.hub_id) elenco.push(['incassi', 'Incassi', 'fa-wallet']);
     if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['utenze', 'Utenze', 'fa-users'], ['candidature', 'Candidature', 'fa-envelope-open-text'], ['impostazioni', 'Impostazioni', 'fa-gear']);
     if (r === 'operatore') elenco.unshift(elenco.splice(1, 1)[0]);
     if (r !== 'admin') elenco.push(['abbonamento', 'Abbonamento', 'fa-id-card']);
@@ -163,6 +173,7 @@ async function vai(scheda) {
         if (scheda === 'orari') { await caricaOrari(); disegnaOrari(); }
         if (scheda === 'tariffe') { await caricaMedici(); disegnaTariffe(); }
         if (scheda === 'conti') { await caricaConti(); disegnaConti(); }
+        if (scheda === 'incassi') { await Promise.all([caricaStatoStripe(), caricaPrenotazioni()]); disegnaIncassi(); }
         if (scheda === 'medici') { await Promise.all([caricaMedici(), caricaAbbonamenti()]); disegnaMedici(); }
         if (scheda === 'hub') { await Promise.all([caricaHub(), caricaAbbonamenti()]); disegnaHub(); }
         if (scheda === 'abbonamento') { st.abbonamento = await api('stato-abbonamento', { conAccesso: true, dati: {} }); disegnaAbbonamento(); }
@@ -186,8 +197,8 @@ async function caricaPrenotazioni() {
     // le richieste scadute ma non ancora aggiornate dal server si mostrano già come scadute
     const ora = Date.now();
     st.prenotazioni = (righe || []).map((p) => (['richiesta', 'da_pagare'].includes(p.stato) && p.scadenza && new Date(p.scadenza).getTime() < ora ? { ...p, stato: 'scaduta' } : p));
-    if (st.io.medico_id) {
-        st.daConfermare = st.prenotazioni.filter((p) => p.stato === 'richiesta' && p.medico_id === st.io.medico_id).length;
+    if (st.io.medico_id || st.io.hub_id) {
+        st.daConfermare = st.prenotazioni.filter((p) => p.stato === 'richiesta' && (st.io.medico_id ? p.medico_id === st.io.medico_id : p.hub_id === st.io.hub_id)).length;
         disegnaAvvisoRichieste();
     }
 }
@@ -276,7 +287,7 @@ function disegnaPrenotazioni() {
 
 function disegnaElencoPrenotazioni() {
     const righe = prenotazioniFiltrate();
-    const comeMedico = (p) => st.io.ruolo === 'admin' || (st.io.medico_id && st.io.medico_id === p.medico_id);
+    const comeMedico = (p) => st.io.ruolo === 'admin' || (st.io.medico_id && st.io.medico_id === p.medico_id) || (st.io.hub_id && st.io.hub_id === p.hub_id);
     $('elenco-prenotazioni').innerHTML = righe.length ? righe.map((p) => `
         <div class="${card} !p-4 ${p.stato === 'richiesta' ? 'border-amber-300' : ''}">
             <button type="button" data-apri="${p.id}" class="w-full text-left flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
@@ -286,7 +297,7 @@ function disegnaElencoPrenotazioni() {
                 </div>
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-slate-800 truncate">${esc(p.paziente_cognome)} ${esc(p.paziente_nome)}</div>
-                    <div class="text-xs text-slate-500 truncate">${esc(p.prestazione?.nome || '')} · Dott. ${esc(p.medico?.cognome || '')} · ${p.canale === 'online' ? 'online' : esc(p.hub?.nome || 'hub')}</div>
+                    <div class="text-xs text-slate-500 truncate">${esc(p.prestazione?.nome || '')} · Dott. ${esc(p.medico?.cognome || '')} · ${p.canale === 'online' ? `online${p.hub?.nome && st.io.ruolo === 'admin' ? ` · ${esc(p.hub.nome)}` : ''}` : esc(p.hub?.nome || 'hub')}</div>
                 </div>
                 <div class="shrink-0 text-right">${badgeStato(p.stato)}${p.stato === 'richiesta' && p.scadenza ? `<div class="text-xs text-slate-500 mt-1">rispondi entro ${esc(dataOra(p.scadenza))}</div>` : ''}</div>
             </button>
@@ -311,7 +322,7 @@ function apriPannello(id) {
     const quotaTesto = p.pagata_il
         ? `${euro(p.quota_cents)} pagata il ${dataOra(p.pagata_il)}${p.metodo_pagamento ? ` (${esc(METODI[p.metodo_pagamento] || p.metodo_pagamento)})` : ''}`
         : `${euro(p.quota_cents)} da pagare`;
-    const ripartizione = p.canale === 'hub' ? `hub ${euro(p.quota_hub_cents)} · Click Dottore ${euro(p.quota_cents - p.quota_hub_cents)}` : '';
+    const gestisce = comeMedico || comeHub;
     const visitaPassata = p.visita_il && new Date(p.visita_il).getTime() < Date.now();
     const conRimborso = p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= 48 * 3600 * 1000;
 
@@ -332,18 +343,18 @@ function apriPannello(id) {
             ${riga('Prestazione', esc(p.prestazione?.nome))}
             ${riga('Medico', `Dott. ${esc(p.medico?.nome)} ${esc(p.medico?.cognome)}`)}
             ${riga('Canale', p.canale === 'online' ? 'Online dal paziente' : `Hub: ${esc(p.hub?.nome)} (${esc(p.hub?.codice)})`)}
-            ${riga('Quota', quotaTesto)}
-            ${riga('Ripartizione', ripartizione)}
+            ${riga('Ticket', quotaTesto)}
+            ${riga('Ticket incassato da', p.hub ? `${esc(p.hub.nome)}${p.canale === 'online' ? ' (hub di riferimento)' : ''}` : '')}
         </dl>
         ${p.note ? `<div class="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm"><div class="text-xs text-slate-500 mb-1">Note del paziente</div>${esc(p.note)}</div>` : ''}
         ${p.motivo_rifiuto ? `<div class="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm"><div class="text-xs text-slate-500 mb-1">Motivo del rifiuto</div>${esc(p.motivo_rifiuto)}</div>` : ''}
         ${p.nota_medico ? `<div class="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm"><div class="text-xs text-slate-500 mb-1">Nota</div>${esc(p.nota_medico)}</div>` : ''}
         <div id="msg-pannello" hidden></div>
         <div class="space-y-4 no-print">
-            ${comeMedico && p.stato === 'richiesta' ? `
+            ${gestisce && p.stato === 'richiesta' ? `
                 <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
                     <div class="text-sm font-semibold text-amber-900">Richiesta da confermare</div>
-                    <p class="text-xs text-amber-900/80">Va confermata entro 48 ore dal ricevimento. ${p.canale === 'online' ? 'Se confermi, il paziente riceve un\'email e ha 24 ore per pagare la quota: poi la visita è definitiva.' : 'Se confermi, la visita è definitiva e l\'hub viene avvisato.'}</p>
+                    <p class="text-xs text-amber-900/80">Va confermata entro 48 ore dal ricevimento${!comeMedico || io.ruolo === 'admin' ? ', dopo aver sentito il medico' : ''}. ${p.canale === 'online' ? (p.quota_cents > 0 ? 'Se confermi, il paziente riceve un\'email e ha 24 ore per pagare il ticket: poi la visita è definitiva.' : 'Se confermi, la visita è subito definitiva: per questa prestazione non c\'è ticket da pagare.') : 'Se confermi, la visita è definitiva e il medico e l\'hub vengono avvisati.'} Se l'orario non va bene, puoi spostarlo qui sotto.</p>
                     <button type="button" data-azione="conferma" class="${btnPrimario} w-full"><i class="fa-solid fa-check mr-1"></i> Conferma la visita</button>
                     <textarea data-motivo-rifiuto rows="2" maxlength="500" placeholder="Motivo del rifiuto (facoltativo, viene comunicato)" class="${classeCampo}"></textarea>
                     <button type="button" data-azione="rifiuta" class="${btnPericolo} w-full">Rifiuta la richiesta</button>
@@ -360,6 +371,13 @@ function apriPannello(id) {
                            <p class="text-xs text-slate-500">Il paziente inquadra il QR code e paga con carta quando vuole.</p>`
                         : '<p class="text-xs text-slate-500">Il bollettino da pagare online si stampa dopo la conferma del medico.</p>'}
                 </div>` : ''}
+            ${gestisce && ['richiesta', 'da_pagare', 'confermata'].includes(p.stato) && !visitaPassata ? `
+                <div class="rounded-xl border border-slate-200 p-4 space-y-3">
+                    <div class="text-sm font-semibold text-slate-800">Sposta la data</div>
+                    <div id="sposta-slot"><button type="button" data-apri-sposta class="${btnSecondario} w-full"><i class="fa-regular fa-calendar mr-1"></i> Scegli un nuovo orario</button></div>
+                    <button type="button" data-conferma-sposta hidden class="${btnPrimario} w-full">Sposta la visita al nuovo orario</button>
+                    <p class="text-xs text-slate-500">Il paziente${comeMedico && !comeHub ? ' e l\'hub ricevono' : comeHub && !comeMedico ? ' e il medico ricevono' : ' riceve'} un'email con il nuovo orario.</p>
+                </div>` : ''}
             ${comeMedico && p.stato === 'confermata' && visitaPassata ? `<button type="button" data-azione="completa" class="${btnSecondario} w-full">Segna la visita come svolta</button>` : ''}
             ${(comeMedico || comeHub) && attiva ? `
                 <div class="rounded-xl border border-red-200 p-4 space-y-3">
@@ -370,10 +388,10 @@ function apriPannello(id) {
                     </select>
                     <textarea data-motivo rows="2" maxlength="500" placeholder="Motivo (viene comunicato al paziente)" class="${classeCampo}"></textarea>
                     <button type="button" data-azione="annulla" class="${btnPericolo} w-full">Annulla la prenotazione</button>
-                    ${p.pagata_il ? `<p class="text-xs text-slate-500">${p.incassata_da === 'click_dottore' ? 'Se la quota va rimborsata, il rimborso sulla carta è automatico.' : 'Se la quota va rimborsata, restituiscila al paziente e poi segnala come rimborsata.'}</p>` : ''}
+                    ${p.pagata_il ? `<p class="text-xs text-slate-500">${p.stripe_payment_intent ? 'Se il ticket va rimborsato, il rimborso sulla carta del paziente parte automaticamente dal conto Stripe dell\'hub.' : 'Se il ticket va rimborsato, restituiscilo al paziente e poi segnalo come rimborsato.'}</p>` : ''}
                 </div>` : ''}
             ${p.quota_trattenuta ? `<p class="text-sm text-slate-600 rounded-xl bg-slate-50 border border-slate-200 p-3">Annullata dal paziente a meno di 48 ore dalla visita: la quota non è rimborsabile.</p>` : ''}
-            ${comeHub && p.canale === 'hub' && p.stato === 'annullata' && p.incassata_da === 'hub' && !p.quota_trattenuta ? `<button type="button" data-azione="segna_rimborsata" class="${btnSecondario} w-full">Segna la quota come rimborsata al paziente</button>` : ''}
+            ${comeHub && p.canale === 'hub' && p.stato === 'annullata' && p.incassata_da === 'hub' && !p.stripe_payment_intent && !p.quota_trattenuta ? `<button type="button" data-azione="segna_rimborsata" class="${btnSecondario} w-full">Segna la quota come rimborsata al paziente</button>` : ''}
             <button type="button" onclick="window.print()" class="${btnSecondario} w-full"><i class="fa-solid fa-print mr-1"></i> Stampa</button>
         </div>`;
     $('pannello').hidden = false;
@@ -396,6 +414,7 @@ async function azionePrenotazione(azione, extra = {}, bottone, id = st.pannelloI
     if (bottone) bottone.disabled = true;
     const testi = {
         conferma: 'Visita confermata: il paziente è stato avvisato', rifiuta: 'Richiesta rifiutata', completa: 'Visita segnata come svolta',
+        sposta: 'Visita spostata: il paziente è stato avvisato',
         annulla: 'Prenotazione annullata', registra_incasso: 'Incasso registrato', segna_rimborsata: 'Rimborso registrato',
     };
     try {
@@ -485,7 +504,7 @@ function disegnaNuova() {
                     <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer"><input type="radio" name="modo" value="confermata" class="mt-1 w-4 h-4">
                         <span><span class="block font-medium text-slate-900">Ho già sentito il medico per telefono: conferma subito</span><span class="block text-xs text-slate-500">La visita è confermata adesso; il medico e il paziente ricevono la conferma via email.</span></span></label>
                 </div>
-                <p class="text-xs text-slate-500">La quota di ${st.quota ? euro(st.quota) : 'prenotazione'} si incassa allo sportello o con il bollettino online, dal dettaglio della prenotazione.</p>
+                <p id="ticket-nuova" class="text-xs text-slate-500">${testoTicketNuova()}</p>
             </div>
             <div id="msg-nuova" hidden></div>
             <button type="submit" id="btn-nuova" class="${btnPrimario} px-6 py-3">Registra</button>` : ''}
@@ -574,7 +593,7 @@ function disegnaEsitoNuova() {
                 <div><dt class="text-xs text-slate-500">Medico</dt><dd class="font-medium text-slate-900">Dott. ${esc(e.medico?.nome)} ${esc(e.medico?.cognome)}</dd></div>
                 <div><dt class="text-xs text-slate-500">Prestazione</dt><dd class="font-medium text-slate-900">${esc(e.prestazione?.nome)}</dd></div>
                 <div><dt class="text-xs text-slate-500">Data e ora</dt><dd class="font-medium text-slate-900">${esc(quando(e.inizio))}</dd></div>
-                <div><dt class="text-xs text-slate-500">Quota</dt><dd class="font-medium text-slate-900">${st.quota ? euro(st.quota) : ''} da incassare</dd></div>
+                <div><dt class="text-xs text-slate-500">Ticket</dt><dd class="font-medium text-slate-900">${ticketDi(e.prestazione?.prezzo_visita_cents, st.percento) ? `${euro(ticketDi(e.prestazione?.prezzo_visita_cents, st.percento))} da incassare` : 'nessun ticket'}</dd></div>
             </dl>
             <div class="no-print flex flex-col sm:flex-row gap-3">
                 <button type="button" data-apri-dopo="${e.id}" class="${btnSecondario}">Apri la prenotazione${confermata ? ' (incasso o bollettino)' : ''}</button>
@@ -776,7 +795,7 @@ function disegnaConti() {
     $('vista').innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
             <div class="lg:col-span-3 space-y-3">
-                <p class="text-sm text-slate-500">Ripartizione della quota per le prenotazioni degli hub: ${pct}% all'hub, ${100 - Number(pct)}% a Click Dottore. Saldo positivo = l'hub deve versare a Click Dottore.</p>
+                <p class="text-sm text-slate-500">Saldi delle quote incassate con il sistema precedente (parte di Click Dottore sulle prenotazioni degli hub). Con il nuovo sistema il ticket va per intero all'hub e qui non si aggiunge più nulla. Saldo positivo = l'hub deve versare a Click Dottore.</p>
                 ${st.conti.length ? st.conti.map((c) => `
                     <div class="${card} !p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div><div class="font-semibold text-slate-900">${esc(c.nome)} <span class="font-mono text-xs text-slate-500">${esc(c.codice)}</span></div>
@@ -865,6 +884,7 @@ function disegnaHub() {
                         <div class="flex items-start justify-between gap-3">
                             <div><div class="font-semibold text-slate-900">${esc(h.nome)} <span class="font-mono text-xs text-slate-500">${esc(h.codice)}</span></div>
                             <div class="text-xs text-slate-500">${h.tipo === 'medico' ? 'Medico che fa da hub' : 'Struttura privata'}${h.citta ? ' · ' + esc(h.citta) : ''}${h.email ? ' · ' + esc(h.email) : ''}</div>
+                            <div class="text-xs mt-1">${h.stripe_pronto ? '<span class="text-emerald-700"><i class="fa-solid fa-circle-check mr-1"></i>Stripe attivo: riceve i ticket</span>' : h.stripe_account_id ? '<span class="text-amber-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>Stripe da completare</span>' : '<span class="text-slate-500"><i class="fa-regular fa-circle mr-1"></i>Stripe non collegato</span>'}</div>
                             <div class="text-xs mt-1 ${h.lat != null ? 'text-emerald-700' : 'text-amber-700'}"><i class="fa-solid fa-location-dot mr-1"></i>${h.lat != null ? (h.attivo ? 'Visibile sulla mappa degli hub' : 'Ha una posizione, ma non è attivo: non compare sulla mappa') : 'Senza posizione: non compare sulla mappa (aggiungi indirizzo e città)'}</div></div>
                             ${interruttore('hub', h.id, h.attivo)}
                         </div>
@@ -961,13 +981,11 @@ function disegnaImpostazioni() {
     $('vista').innerHTML = `
         <form data-admin="imposta_impostazioni" class="${card} space-y-4 max-w-lg">
             <div>
-                <h2 class="font-bold text-slate-900">Quota di prenotazione</h2>
-                <p class="text-sm text-slate-500">Importo pagato dal paziente per ogni prenotazione, sia online sia tramite hub.</p>
+                <h2 class="font-bold text-slate-900">Ticket di prenotazione</h2>
+                <p class="text-sm text-slate-500">Percentuale della tariffa della prestazione pagata dal paziente, sia online sia tramite hub. Il ticket va per intero all'hub di riferimento: Click Dottore percepisce solo gli abbonamenti.</p>
             </div>
-            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Importo in euro</span>
-                <input name="quota_euro" type="number" min="0.5" max="100" step="0.01" value="${st.quota ? (st.quota / 100).toFixed(2) : ''}" required class="${classeCampo}"></label>
-            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Parte della quota che spetta all'hub (%)</span>
-                <input name="quota_hub_percento" type="number" min="0" max="100" step="1" value="${esc(i.quota_hub_percento ?? '80')}" required class="${classeCampo}"></label>
+            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Percentuale sulla tariffa (%)</span>
+                <input name="ticket_percento" type="number" min="0.1" max="100" step="0.1" value="${esc(i.ticket_percento ?? '10')}" required class="${classeCampo}"></label>
             <div class="pt-2 border-t border-slate-100">
                 <h2 class="font-bold text-slate-900 mt-2">Prezzi degli abbonamenti mensili</h2>
                 <p class="text-sm text-slate-500">Valgono per i nuovi abbonamenti di medici e hub; chi è già abbonato mantiene il prezzo sottoscritto.</p>
@@ -1003,8 +1021,8 @@ async function inviaAdmin(form) {
     if (azione === 'crea_hub') dati.codice = String(f.codice || '').toUpperCase();
     if (azione === 'imposta_impostazioni') {
         dati = {
-            azione, quota_cents: Math.round(Number(String(f.quota_euro).replace(',', '.')) * 100),
-            quota_hub_percento: Number(f.quota_hub_percento), iban: f.iban, intestatario: f.intestatario, email_candidature: f.email_candidature,
+            azione, ticket_percento: String(f.ticket_percento).replace(',', '.'),
+            iban: f.iban, intestatario: f.intestatario, email_candidature: f.email_candidature,
         };
         for (const p of PIANI) dati[`abbonamento_${p}_cents`] = Math.round(Number(String(f[`abbonamento_${p}`]).replace(',', '.')) * 100);
     }
@@ -1017,13 +1035,120 @@ async function inviaAdmin(form) {
             invita_utente: 'Utenza creata: l\'invito è stato inviato via email', imposta_impostazioni: 'Impostazioni salvate', aggiorna_hub: 'Hub aggiornato',
             registra_regolazione: 'Bonifico registrato',
         };
-        if (azione === 'imposta_impostazioni') st.quota = dati.quota_cents;
+        if (azione === 'imposta_impostazioni') st.percento = Number(dati.ticket_percento);
         await vai(st.scheda);
         avviso(testi[azione] || 'Fatto', 'ok');
     } catch (err) {
         avviso(err.message);
         btn.disabled = false;
     }
+}
+
+// ---------------------------------------------------------------------
+// Spostamento della data (medico e hub)
+// ---------------------------------------------------------------------
+async function apriSposta() {
+    const p = st.prenotazioni.find((x) => x.id === st.pannelloId);
+    const el = document.getElementById('sposta-slot');
+    if (!p || !el) return;
+    st.nuovoOrario = null;
+    el.innerHTML = '<p class="text-sm text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Carico gli orari liberi...</p>';
+    try {
+        const slots = await slotLiberi(p.prestazione_id);
+        selettoreSlot(el, slots, (iso) => {
+            st.nuovoOrario = iso;
+            const b = $('pannello-corpo').querySelector('[data-conferma-sposta]');
+            if (b) { b.hidden = false; b.textContent = `Sposta la visita a ${quando(iso)}`; }
+        });
+    } catch (err) {
+        el.innerHTML = `<p class="text-sm text-red-700">${esc(err.message)}</p>`;
+    }
+}
+
+// ---------------------------------------------------------------------
+// Ticket e conto Stripe dell'hub
+// ---------------------------------------------------------------------
+function testoTicketNuova() {
+    const pr = st.prestazioni.find((x) => x.id === st.nuova?.prestazioneId);
+    const t = pr ? ticketDi(pr.prezzo_visita_cents, st.percento) : 0;
+    const quanto = pr ? (t ? `di ${euro(t)}` : '') : `(il ${percentoTesto(st.percento)} della tariffa)`;
+    if (pr && !t) return 'Per questa prestazione non c\'è ticket da incassare.';
+    return `Il ticket ${quanto} spetta interamente al tuo hub: lo incassi allo sportello o con il bollettino online, dal dettaglio della prenotazione.`;
+}
+
+async function caricaStatoStripe() {
+    try {
+        st.stripeHub = await api('stato-stripe-hub', { conAccesso: true, dati: {} });
+    } catch (err) {
+        st.stripeHub = { errore: err.message };
+    }
+    const el = $('avviso-stripe') || (() => {
+        const d = document.createElement('div');
+        d.id = 'avviso-stripe';
+        d.className = 'mb-4';
+        $('schede').before(d);
+        return d;
+    })();
+    const s = st.stripeHub;
+    el.hidden = !!s.pronto || !!s.errore;
+    if (!el.hidden) {
+        el.innerHTML = `
+            <div class="rounded-2xl border border-skybrand-200 bg-skybrand-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="text-sm text-slate-800"><i class="fa-solid fa-wallet mr-2 text-skybrand-600"></i><strong>${s.collegato ? 'Completa la registrazione su Stripe' : 'Collega il tuo conto Stripe'}</strong> per ricevere i ticket delle prenotazioni online dei medici della tua zona.</div>
+                <button type="button" data-collega-stripe class="shrink-0 ${btnPrimario} !py-2">${s.collegato ? 'Completa su Stripe' : 'Collega Stripe'}</button>
+            </div>`;
+    }
+}
+
+async function collegaStripe(btn) {
+    const testo = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Apertura di Stripe...';
+    try {
+        const { url } = await api('collega-stripe', { conAccesso: true, dati: {} });
+        location.href = url;
+    } catch (err) {
+        avviso(err.message);
+        btn.disabled = false;
+        btn.innerHTML = testo;
+    }
+}
+
+function disegnaIncassi() {
+    const s = st.stripeHub || {};
+    const mie = st.prenotazioni.filter((p) => p.hub_id === st.io.hub_id);
+    const incassate = mie.filter((p) => p.pagata_il && p.stato !== 'rimborsata');
+    const inizioMese = new Date(); inizioMese.setDate(1); inizioMese.setHours(0, 0, 0, 0);
+    const somma = (r) => r.reduce((t, p) => t + (p.quota_cents || 0), 0);
+    const delMese = incassate.filter((p) => new Date(p.pagata_il) >= inizioMese);
+    const online = incassate.filter((p) => p.stripe_payment_intent);
+    const sportello = incassate.filter((p) => !p.stripe_payment_intent);
+    const stato = s.errore ? `<p class="text-sm text-red-700">${esc(s.errore)}</p>`
+        : s.pronto ? `<p class="text-sm text-emerald-700 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i>Conto Stripe attivo: ricevi i ticket pagati online.</p>
+            ${s.accrediti_attivi ? '' : '<p class="text-xs text-amber-700">Stripe non ha ancora attivato i versamenti sul tuo conto bancario: completa i dati richiesti dalla dashboard di Stripe.</p>'}
+            <a href="https://dashboard.stripe.com" target="_blank" rel="noopener" class="${btnSecondario} w-full sm:w-auto"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> Apri la dashboard Stripe</a>`
+        : s.collegato ? `<p class="text-sm text-amber-700 font-semibold"><i class="fa-solid fa-circle-exclamation mr-1"></i>Registrazione su Stripe da completare${s.da_completare ? ` (${s.da_completare} ${s.da_completare === 1 ? 'dato mancante' : 'dati mancanti'})` : ''}.</p>
+            <button type="button" data-collega-stripe class="${btnPrimario}">Completa su Stripe</button>`
+        : `<p class="text-sm text-slate-600">Per ricevere i ticket pagati online dai pazienti serve un conto Stripe intestato al tuo hub. La registrazione si fa sul sito di Stripe e richiede pochi minuti (dati dell'attività, documento e IBAN).</p>
+            <button type="button" data-collega-stripe class="${btnPrimario}">Collega Stripe</button>`;
+    $('vista').innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-5xl">
+            <div class="${card} space-y-3">
+                <h2 class="font-bold text-slate-900">Conto Stripe per i ticket</h2>
+                ${stato}
+                <p class="text-xs text-slate-500">Il ticket (${percentoTesto(st.percento)} della tariffa della visita) delle prenotazioni online dei medici della tua città, o di cui sei l'hub più vicino, si paga direttamente sul tuo conto Stripe. Le commissioni di Stripe sono a carico del conto che incassa; i rimborsi dovuti al paziente partono in automatico dallo stesso conto.</p>
+            </div>
+            <div class="${card} space-y-3">
+                <h2 class="font-bold text-slate-900">Ticket incassati</h2>
+                <dl class="grid grid-cols-1 gap-2 text-sm">
+                    <div class="flex justify-between"><dt class="text-slate-500">Questo mese</dt><dd class="font-semibold text-slate-900">${euro(somma(delMese))}</dd></div>
+                    <div class="flex justify-between"><dt class="text-slate-500">Totale pagati online (Stripe)</dt><dd class="font-medium">${euro(somma(online))}</dd></div>
+                    <div class="flex justify-between"><dt class="text-slate-500">Totale incassati allo sportello</dt><dd class="font-medium">${euro(somma(sportello))}</dd></div>
+                    <div class="flex justify-between"><dt class="text-slate-500">Prenotazioni con ticket incassato</dt><dd class="font-medium">${incassate.length}</dd></div>
+                </dl>
+                <p class="text-xs text-slate-500">Click Dottore non trattiene nulla sui ticket: il tuo hub paga solo l'abbonamento mensile.</p>
+            </div>
+        </div>`;
 }
 
 // ---------------------------------------------------------------------
@@ -1169,6 +1294,12 @@ document.addEventListener('click', async (e) => {
     }
     if (t.hasAttribute('data-chiudi')) return chiudiPannello();
     if (t.hasAttribute('data-bollettino')) return stampaBollettino(t);
+    if (t.hasAttribute('data-apri-sposta')) return apriSposta();
+    if (t.hasAttribute('data-conferma-sposta')) {
+        if (!st.nuovoOrario) return;
+        return azionePrenotazione('sposta', { inizio: st.nuovoOrario }, t);
+    }
+    if (t.hasAttribute('data-collega-stripe')) return collegaStripe(t);
     if (t.dataset.azione) {
         const corpo = $('pannello-corpo');
         const extra = {};
@@ -1252,6 +1383,7 @@ document.addEventListener('change', (e) => {
     if (e.target.name === 'prestazione_id' && e.target.closest('#form-nuova')) {
         st.nuova.prestazioneId = e.target.value;
         st.nuova.slot = null;
+        if ($('ticket-nuova')) $('ticket-nuova').textContent = testoTicketNuova();
         caricaSlotNuova();
     }
     if (e.target.id === 'medico-gestito') { st.medicoGestito = e.target.value; vai(st.scheda); }
