@@ -365,7 +365,7 @@ function apriPannello(id) {
                     <div class="text-sm font-semibold text-slate-800">Ticket di prenotazione (${euro(p.quota_cents)})</div>
                     <p class="text-xs text-slate-500">Se il paziente paga in presenza (contanti o POS) o con bonifico istantaneo, registra qui l'incasso${p.canale === 'online' ? ': la visita diventa confermata e il medico e il paziente ricevono la conferma via email' : ''}.</p>
                     <div class="flex gap-2">
-                        <select data-metodo class="${classeCampo}"><option value="">Pagato con...</option><option value="contanti">Contanti</option><option value="pos">POS / carta</option><option value="bonifico">Bonifico istantaneo</option></select>
+                        <select data-metodo onchange="this.classList.toggle('!text-slate-400', !this.value)" class="${classeCampo} !text-slate-400"><option value="" class="text-slate-400">Pagato con...</option><option value="contanti" class="text-slate-900">Contanti</option><option value="pos" class="text-slate-900">POS / carta</option><option value="bonifico" class="text-slate-900">Bonifico istantaneo</option></select>
                         <button type="button" data-azione="registra_incasso" class="${btnPrimario} shrink-0">Registra il pagamento</button>
                     </div>
                     ${p.canale === 'online' ? '<p class="text-xs text-slate-500">In alternativa il paziente può pagare con carta dalla sua area personale.</p>'
