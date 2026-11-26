@@ -542,7 +542,7 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
     await inviaEmail(p.medico.email, `Visita confermata ${p.codice}: ${dataOra(p.visita_il)}`, layoutEmail("Visita confermata", `
       <p>Gentile ${esc(nomeMedico(p))},<br>è confermata la visita per <strong>${esc(p.prestazione.nome)}</strong>
       il <strong>${esc(dataOra(p.visita_il))}</strong>${p.canale === "hub" ? `, registrata da ${esc(p.hub?.nome ?? "una struttura")} dopo averla concordata con te` : ""}${
-        !p.pagata_il ? "" : ["pos", "contanti", "altro"].includes(p.metodo_pagamento)
+        !p.pagata_il ? "" : ["pos", "contanti", "bonifico", "altro"].includes(p.metodo_pagamento)
           ? `: il ticket è stato pagato presso ${esc(p.hub?.nome ?? "l'hub")}`
           : ": il paziente ha pagato il ticket di prenotazione"}.</p>
       ${boxCodice(p.codice)}
@@ -1037,7 +1037,7 @@ async function aggiornaPrenotazione(req: Request) {
       }
       if (!online && !["richiesta", "confermata"].includes(p.stato)) throw new HttpError(409, "Stato non compatibile con l'incasso");
       const metodo = String(body.metodo_pagamento ?? "");
-      if (!["pos", "contanti", "altro"].includes(metodo)) throw new HttpError(400, "Indica come è stato pagato il ticket");
+      if (!["pos", "contanti", "bonifico", "altro"].includes(metodo)) throw new HttpError(400, "Indica come è stato pagato il ticket");
       // se il paziente aveva aperto il pagamento online, lo chiudo per evitare un doppio addebito
       if (p.stripe_session_id && p.stripe_account_id) {
         try { await stripe("POST", `checkout/sessions/${p.stripe_session_id}/expire`, {}, p.stripe_account_id); } catch (_) { /* già chiusa */ }
