@@ -276,6 +276,7 @@
 
     <script src="specializzazioni.js?v=1"></script>
     <script src="prestazioni-catalogo.js?v=1"></script>
+    <script src="suggerimenti-medici.js?v=1"></script>
     <script>
         const state = { isAutoSelecting: false };
 
@@ -8507,13 +8508,42 @@ Zungri|VV|`;
                 matches = startsWith.sort(byName).concat(wordStart.sort(byName), prestInizio.sort(byName), prestParola.sort(byName));
             }
 
-            if (!matches.length) {
+            // medici trovati per nome, cognome o titolo: in cima all'elenco, aprono la pagina del medico
+            const SM = window.SuggerimentiMedici;
+            const medici = SM ? SM.trova(value).slice(0, 8) : [];
+            if (SM && !SM.pronti()) SM.quandoPronti(() => {
+                const input = document.getElementById('specialty-input');
+                if (input && document.activeElement === input) renderSpecialtyMatches(input.value);
+            });
+
+            if (!matches.length && !medici.length) {
                 container.classList.add('hidden');
                 container.innerHTML = '';
                 return;
             }
 
             container.innerHTML = '';
+            medici.forEach((m) => {
+                const row = document.createElement('a');
+                row.href = SM.link(m);
+                row.className = 'px-4 py-2 hover:bg-skybrand-50 text-sm text-slate-700 cursor-pointer flex items-center gap-2.5';
+                const icona = document.createElement('i');
+                icona.className = 'fa-solid fa-user-doctor text-skybrand-500 shrink-0';
+                const testo = document.createElement('span');
+                testo.className = 'flex-1 min-w-0';
+                const nome = document.createElement('span');
+                nome.className = 'block font-semibold text-slate-800 truncate';
+                nome.textContent = m.etichetta;
+                const dett = document.createElement('span');
+                dett.className = 'block text-xs text-slate-500 truncate';
+                dett.textContent = SM.dettagli(m);
+                testo.append(nome, dett);
+                const tag = document.createElement('span');
+                tag.className = 'shrink-0 text-[11px] font-semibold text-slate-400';
+                tag.textContent = 'Medico';
+                row.append(icona, testo, tag);
+                container.appendChild(row);
+            });
             matches.slice(0, 40).forEach((specialty) => {
                 const row = document.createElement('div');
                 row.className = 'px-4 py-2 hover:bg-skybrand-50 text-sm text-slate-700 cursor-pointer flex items-center gap-2.5';
@@ -8614,7 +8644,7 @@ Zungri|VV|`;
 
             if (!specInput || !locInput || !specAuto || !locAuto) return;
 
-            specInput.addEventListener('focus', () => { if (!state.isAutoSelecting) renderSpecialtyMatches(specInput.value); });
+            specInput.addEventListener('focus', () => { window.SuggerimentiMedici?.carica(); if (!state.isAutoSelecting) renderSpecialtyMatches(specInput.value); });
             specInput.addEventListener('input', () => { if (!state.isAutoSelecting) renderSpecialtyMatches(specInput.value); });
             locInput.addEventListener('focus', () => { loadComuni(); if (!state.isAutoSelecting) renderLocationMatches(locInput.value); });
             locInput.addEventListener('input', () => { loadComuni(); if (!state.isAutoSelecting) renderLocationMatches(locInput.value); });

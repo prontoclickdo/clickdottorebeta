@@ -74,6 +74,7 @@
 
     <script src="specializzazioni.js?v=1"></script>
     <script src="prestazioni-catalogo.js?v=1"></script>
+    <script src="suggerimenti-medici.js?v=1"></script>
     <script type="module">
         import { supabase, esc } from './app.js';
         import './ricerca.js?v=11';
@@ -145,7 +146,13 @@
                 const inizio = voci.filter((v) => v.norm.startsWith(t));
                 const parola = voci.filter((v) => !v.norm.startsWith(t) && v.norm.split(/[\s(\/,]+/).some((w) => w.startsWith(t)));
                 const ordina = (l) => [...l.filter((v) => !v.tipo).sort(perNome), ...l.filter((v) => v.tipo).sort(perNome)];
-                elenco = [...ordina(inizio), ...ordina(parola)].slice(0, 40).map((v) => ({ valore: v.nome, testo: esc(v.nome), tag: v.tipo }));
+                const SM = window.SuggerimentiMedici;
+                if (SM && !SM.pronti()) SM.quandoPronti(() => { if (document.activeElement === $('q')) suggerisci('q'); });
+                const medici = SM ? SM.trova(testo).slice(0, 8).map((m) => ({
+                    link: SM.link(m), tag: 'Medico',
+                    testo: `<i class="fa-solid fa-user-doctor text-skybrand-500 mr-2"></i><span class="font-semibold text-slate-800">${esc(m.etichetta)}</span><span class="block text-xs text-slate-500 ml-6">${esc(SM.dettagli(m))}</span>`,
+                })) : [];
+                elenco = [...medici, ...[...ordina(inizio), ...ordina(parola)].slice(0, 40).map((v) => ({ valore: v.nome, testo: esc(v.nome), tag: v.tipo }))];
             } else {
                 if (!comuni) { caricaComuni(); return; }
                 if (/^\d+$/.test(t)) {
@@ -168,7 +175,7 @@
 
         ['q', 'dove'].forEach((campo) => {
             $(campo).addEventListener('input', () => suggerisci(campo));
-            $(campo).addEventListener('focus', () => { if (campo === 'dove') caricaComuni(); });
+            $(campo).addEventListener('focus', () => { if (campo === 'dove') caricaComuni(); else window.SuggerimentiMedici?.carica(); });
             $(campo).addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') $(`sug-${campo}`).hidden = true;
             });
@@ -177,6 +184,8 @@
             const b = e.target.closest('[data-campo]');
             if (b) {
                 const campo = b.dataset.campo;
+                const scelta = proposte[campo][Number(b.dataset.i)];
+                if (scelta.link) { location.href = scelta.link; return; }
                 $(campo).value = proposte[campo][Number(b.dataset.i)].valore;
                 $(`sug-${campo}`).hidden = true;
                 return;
