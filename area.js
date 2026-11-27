@@ -19,7 +19,7 @@ const st = {
     pannelloId: null,
     medicoGestito: null, listinoSpec: null,      // medico di cui si modificano orari e tariffe (il proprio, o scelto dall'admin)
     orari: [], chiusure: [],
-    impostazioni: {}, conti: [], regolazioni: [], candidature: [],
+    impostazioni: {}, candidature: [],
     daConfermare: 0,
     abbonamento: null, abbonamenti: [],
 };
@@ -152,8 +152,7 @@ function schede() {
     const elenco = [['prenotazioni', 'Prenotazioni', 'fa-list-check']];
     if (r === 'admin' || io.hub_id) elenco.push(['nuova', 'Nuova prenotazione', 'fa-plus']);
     if (r === 'admin' || io.medico_id) elenco.push(['orari', 'Orari', 'fa-clock'], ['tariffe', 'Prestazioni e tariffe', 'fa-tags']);
-    if (r === 'admin') elenco.push(['conti', 'Conti hub (storico)', 'fa-scale-balanced']);
-    else if (io.hub_id) elenco.push(['incassi', 'Incassi', 'fa-wallet']);
+    if (r !== 'admin' && io.hub_id) elenco.push(['incassi', 'Incassi', 'fa-wallet']);
     if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['medicihub', 'Medici+Hub', 'fa-house-medical'], ['utenze', 'Utenze', 'fa-users'], ['candidature', 'Candidature', 'fa-envelope-open-text'], ['impostazioni', 'Impostazioni', 'fa-gear']);
     if (r === 'operatore') elenco.unshift(elenco.splice(1, 1)[0]);
     if (r !== 'admin') elenco.push(['abbonamento', 'Abbonamento', 'fa-id-card']);
@@ -173,7 +172,6 @@ async function vai(scheda) {
         if (scheda === 'nuova') disegnaNuova();
         if (scheda === 'orari') { await caricaOrari(); disegnaOrari(); }
         if (scheda === 'tariffe') { await caricaMedici(); disegnaTariffe(); }
-        if (scheda === 'conti') { await caricaConti(); disegnaConti(); }
         if (scheda === 'incassi') { await Promise.all([caricaStatoStripe(), caricaPrenotazioni()]); disegnaIncassi(); }
         if (scheda === 'medici') { await Promise.all([caricaMedici(), caricaAbbonamenti(), caricaProfili()]); disegnaMedici(); }
         if (scheda === 'hub') { await Promise.all([caricaHub(), caricaAbbonamenti(), caricaProfili()]); disegnaHub(); }
@@ -237,14 +235,6 @@ async function caricaOrari() {
 async function caricaImpostazioni() {
     const { data: righe } = await supabase.from('impostazioni').select('chiave, valore');
     st.impostazioni = Object.fromEntries((righe || []).map((r) => [r.chiave, r.valore]));
-}
-async function caricaConti() {
-    await caricaImpostazioni();
-    const [{ data: c }, { data: r }] = await Promise.all([
-        supabase.from('conti_hub').select('*').order('nome'),
-        supabase.from('regolazioni').select('*, hub:hub(nome)').order('data', { ascending: false }).limit(100),
-    ]);
-    st.conti = c || []; st.regolazioni = r || [];
 }
 
 // Selettore del medico per l'amministratore (orari e tariffe)
@@ -827,82 +817,6 @@ async function inviaMedico(form) {
 }
 
 // ---------------------------------------------------------------------
-// Conti con gli hub (80% all'hub, 20% a Click Dottore)
-// ---------------------------------------------------------------------
-const saldo = (c) => c.dovuto_a_click_dottore - c.dovuto_all_hub - c.versato_netto;
-
-function testoSaldo(c, perHub) {
-    const s = saldo(c);
-    if (s === 0) return '<span class="text-emerald-700 font-semibold">In pari</span>';
-    if (s > 0) return `<span class="text-amber-700 font-semibold">${perHub ? 'Devi versare' : 'L\'hub deve versare'} ${euro(s)}${perHub ? ' a Click Dottore' : ''}</span>`;
-    return `<span class="text-skybrand-700 font-semibold">${perHub ? 'Click Dottore ti deve' : 'Da versare all\'hub'} ${euro(-s)}</span>`;
-}
-
-function disegnaConti() {
-    const pct = st.impostazioni.quota_hub_percento || '80';
-    const iban = st.impostazioni.iban_click_dottore || '';
-    const intestatario = st.impostazioni.intestatario_iban || 'Click Dottore';
-    const regolazioni = (r) => r.length ? r.map((x) => `
-        <div class="flex items-center justify-between gap-3 text-sm py-2 border-t border-slate-100">
-            <div><div class="font-medium text-slate-900">${data(x.data)} · ${x.importo_cents > 0 ? 'bonifico dell\'hub a Click Dottore' : 'bonifico di Click Dottore all\'hub'}${st.io.ruolo === 'admin' ? ` · ${esc(x.hub?.nome || '')}` : ''}</div>${x.nota ? `<div class="text-xs text-slate-500">${esc(x.nota)}</div>` : ''}</div>
-            <div class="font-semibold text-slate-900">${euro(Math.abs(x.importo_cents))}</div>
-        </div>`).join('') : '<p class="text-sm text-slate-500">Nessun bonifico registrato.</p>';
-
-    if (st.io.ruolo !== 'admin') {
-        const c = st.conti.find((x) => x.hub_id === st.io.hub_id) || { dovuto_a_click_dottore: 0, dovuto_all_hub: 0, versato_netto: 0 };
-        const s = saldo(c);
-        $('vista').innerHTML = `
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-5xl">
-                <div class="${card} space-y-4">
-                    <h2 class="font-bold text-slate-900">Saldo con Click Dottore</h2>
-                    <div class="text-2xl">${testoSaldo(c, true)}</div>
-                    <dl class="grid grid-cols-1 gap-2 text-sm">
-                        <div class="flex justify-between"><dt class="text-slate-500">Quote incassate allo sportello: parte di Click Dottore (${100 - Number(pct)}%)</dt><dd class="font-medium">${euro(c.dovuto_a_click_dottore)}</dd></div>
-                        <div class="flex justify-between"><dt class="text-slate-500">Bollettini pagati online: la tua parte (${pct}%)</dt><dd class="font-medium">${euro(c.dovuto_all_hub)}</dd></div>
-                        <div class="flex justify-between"><dt class="text-slate-500">Bonifici già registrati (netto)</dt><dd class="font-medium">${euro(c.versato_netto)}</dd></div>
-                    </dl>
-                    ${s > 0 ? `<div class="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-slate-800 space-y-1">
-                        <p class="font-semibold">Versa ${euro(s)} con bonifico istantaneo, il prima possibile:</p>
-                        ${iban ? `<p>IBAN <span class="font-mono font-semibold select-all">${esc(iban)}</span></p><p>Intestato a ${esc(intestatario)}</p>` : '<p>L\'IBAN di Click Dottore non è ancora stato indicato: contatta l\'amministratore.</p>'}
-                        <p>Causale: <span class="font-mono select-all">Quote Click Dottore hub ${esc(st.io.hub?.codice || '')}</span></p>
-                        <p class="text-xs text-slate-500">Il saldo si aggiorna quando Click Dottore registra il bonifico ricevuto.</p>
-                    </div>` : ''}
-                    ${s < 0 ? '<p class="text-sm text-slate-600">Click Dottore ti verserà la tua parte delle quote pagate online con bonifico.</p>' : ''}
-                </div>
-                <div class="${card}"><h2 class="font-bold text-slate-900 mb-2">Bonifici registrati</h2>${regolazioni(st.regolazioni)}</div>
-            </div>`;
-        return;
-    }
-
-    $('vista').innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
-            <div class="lg:col-span-3 space-y-3">
-                <p class="text-sm text-slate-500">Saldi delle quote incassate con il sistema precedente (parte di Click Dottore sulle prenotazioni degli hub). Con il nuovo sistema il ticket va per intero all'hub e qui non si aggiunge più nulla. Saldo positivo = l'hub deve versare a Click Dottore.</p>
-                ${st.conti.length ? st.conti.map((c) => `
-                    <div class="${card} !p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div><div class="font-semibold text-slate-900">${esc(c.nome)} <span class="font-mono text-xs text-slate-500">${esc(c.codice)}</span></div>
-                        <div class="text-xs text-slate-500">sportello: ${euro(c.dovuto_a_click_dottore)} a Click Dottore · bollettini: ${euro(c.dovuto_all_hub)} all'hub · bonifici: ${euro(c.versato_netto)}</div></div>
-                        <div class="text-sm shrink-0">${testoSaldo(c, false)}</div>
-                    </div>`).join('') : `<div class="${card} text-sm text-slate-500">Nessun hub.</div>`}
-                <div class="${card}"><h2 class="font-bold text-slate-900 mb-2">Ultimi bonifici registrati</h2>${regolazioni(st.regolazioni)}</div>
-            </div>
-            <form data-admin="registra_regolazione" class="${card} space-y-3 lg:col-span-2 self-start">
-                <h2 class="font-bold text-slate-900">Registra un bonifico</h2>
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Hub</span>
-                    <select name="hub_id" required class="${classeCampo}">${st.conti.map((c) => `<option value="${c.hub_id}">${esc(c.nome)} (${esc(c.codice)})</option>`).join('')}</select></label>
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Verso</span>
-                    <select name="verso" class="${classeCampo}"><option value="hub_a_cd">Ricevuto dall'hub</option><option value="cd_a_hub">Inviato all'hub</option></select></label>
-                <div class="grid grid-cols-2 gap-3">
-                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Importo (€)</span><input name="importo_euro" type="number" min="0.01" step="0.01" required class="${classeCampo}"></label>
-                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Data</span><input name="data" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${classeCampo}"></label>
-                </div>
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Nota (facoltativa)</span><input name="nota" maxlength="200" class="${classeCampo}" placeholder="Es. CRO del bonifico"></label>
-                <button type="submit" class="${btnPrimario} w-full">Registra</button>
-            </form>
-        </div>`;
-}
-
-// ---------------------------------------------------------------------
 // Amministrazione
 // ---------------------------------------------------------------------
 const campo = (nome, etichetta, tipo = 'text', extra = '') => `
@@ -1128,14 +1042,6 @@ function disegnaImpostazioni() {
                     <input name="abbonamento_${p}" type="number" min="1" max="1000" step="0.01" value="${(Number(i[`abbonamento_${p}_cents`] ?? PIANI_INFO[p].cents) / 100).toFixed(2)}" required class="${classeCampo}"></label>`).join('')}
             </div>
             <div class="pt-2 border-t border-slate-100">
-                <h2 class="font-bold text-slate-900 mt-2">Conto per i bonifici degli hub</h2>
-                <p class="text-sm text-slate-500">Mostrato agli hub nella scheda Conti, per versare la parte di Click Dottore con bonifico istantaneo.</p>
-            </div>
-            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">IBAN</span>
-                <input name="iban" maxlength="40" value="${esc(i.iban_click_dottore ?? '')}" class="${classeCampo} font-mono" style="text-transform:uppercase"></label>
-            <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Intestatario</span>
-                <input name="intestatario" maxlength="120" value="${esc(i.intestatario_iban ?? '')}" class="${classeCampo}"></label>
-            <div class="pt-2 border-t border-slate-100">
                 <h2 class="font-bold text-slate-900 mt-2">Richieste da "Lavora con noi"</h2>
                 <p class="text-sm text-slate-500">Indirizzo che riceve per email ogni nuova richiesta di medici e hub. Le richieste restano comunque nella scheda Candidature.</p>
             </div>
@@ -1155,7 +1061,7 @@ async function inviaAdmin(form) {
     if (azione === 'imposta_impostazioni') {
         dati = {
             azione, ticket_percento: String(f.ticket_percento).replace(',', '.'),
-            iban: f.iban, intestatario: f.intestatario, email_candidature: f.email_candidature,
+            email_candidature: f.email_candidature,
         };
         for (const p of PIANI) dati[`abbonamento_${p}_cents`] = Math.round(Number(String(f[`abbonamento_${p}`]).replace(',', '.')) * 100);
     }
@@ -1166,7 +1072,6 @@ async function inviaAdmin(form) {
         const testi = {
             crea_medico: 'Medico aggiunto', crea_prestazione: 'Prestazione aggiunta', crea_hub: 'Hub aggiunto',
             invita_utente: 'Utenza creata: l\'invito è stato inviato via email', imposta_impostazioni: 'Impostazioni salvate', aggiorna_hub: 'Hub aggiornato',
-            registra_regolazione: 'Bonifico registrato',
         };
         if (azione === 'imposta_impostazioni') st.percento = Number(dati.ticket_percento);
         await vai(st.scheda);
@@ -1289,7 +1194,7 @@ function disegnaIncassi() {
 // ---------------------------------------------------------------------
 const PIANI = ['starter', 'plus', 'premium'];
 const PIANI_INFO = {
-    starter: { nome: 'Starter', cents: 1990, icona: 'fa-seedling', punti: ['Tutte le funzioni dell\'area riservata', 'Prenotazioni, orari, prestazioni e conti', 'Visibilità nella ricerca e sulla mappa del sito'] },
+    starter: { nome: 'Starter', cents: 1990, icona: 'fa-seedling', punti: ['Tutte le funzioni dell\'area riservata', 'Prenotazioni, orari, prestazioni e incassi', 'Visibilità nella ricerca e sulla mappa del sito'] },
     plus: { nome: 'Plus', cents: 3990, icona: 'fa-star', punti: ['Tutto ciò che include Starter', 'Funzioni prioritarie (in arrivo)'] },
     premium: { nome: 'Premium', cents: 5990, icona: 'fa-crown', punti: ['Tutto ciò che include Plus', 'Massima priorità e funzioni esclusive (in arrivo)'] },
 };
