@@ -95,7 +95,7 @@
             $('dettagli').innerHTML = [
                 riga('Paziente', b.paziente),
                 riga('Prestazione', b.prestazione),
-                riga('Medico', `${b.medico?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${b.medico.nome} ${b.medico.cognome} · ${b.medico.specializzazione}`),
+                riga('Medico', `${b.medico?.genere === 'F' ? 'Dott.ssa' : b.medico?.genere === 'A' && b.medico?.titolo ? b.medico.titolo : 'Dott.'} ${b.medico.nome} ${b.medico.cognome} · ${b.medico.specializzazione}`),
                 riga('Data e ora', quando(b.visita_il)),
                 b.hub ? riga('Prenotata presso', b.hub) : '',
                 riga('Beneficiario', 'Click Dottore'),

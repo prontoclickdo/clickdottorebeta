@@ -44,7 +44,7 @@ async function avvia() {
     const { data: s } = await supabase.auth.getSession();
     if (!s.session) return location.replace('accedi.html');
     const { data: profilo } = await supabase.from('profili')
-        .select('*, hub:hub(nome, codice, tipo), medico:medici(nome, cognome, genere)')
+        .select('*, hub:hub(nome, codice, tipo), medico:medici(nome, cognome, genere, titolo)')
         .eq('id', s.session.user.id).maybeSingle();
     if (!profilo) {
         // account di un paziente: ha la sua area personale
@@ -63,7 +63,7 @@ async function avvia() {
 
     const dove = profilo.ruolo === 'admin' ? 'Click Dottore'
         : profilo.hub ? `${profilo.hub.nome} · codice hub ${profilo.hub.codice}`
-        : profilo.medico ? `${profilo.medico?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${profilo.medico.nome} ${profilo.medico.cognome}` : '';
+        : profilo.medico ? `${profilo.medico?.genere === 'F' ? 'Dott.ssa' : profilo.medico?.genere === 'A' && profilo.medico?.titolo ? profilo.medico.titolo : 'Dott.'} ${profilo.medico.nome} ${profilo.medico.cognome}` : '';
     $('sottotitolo').textContent = `${RUOLI[profilo.ruolo]}${dove ? ' · ' + dove : ''}`;
     $('app').hidden = false;
 
@@ -192,7 +192,7 @@ async function vai(scheda) {
 // ---------------------------------------------------------------------
 async function caricaPrenotazioni() {
     const { data: righe, error } = await supabase.from('prenotazioni')
-        .select('*, medico:medici(nome, cognome, genere, specializzazione, citta, indirizzo), prestazione:prestazioni(nome, durata_minuti), hub:hub(nome, codice)')
+        .select('*, medico:medici(nome, cognome, genere, titolo, specializzazione, citta, indirizzo), prestazione:prestazioni(nome, durata_minuti), hub:hub(nome, codice)')
         .order('creata_il', { ascending: false }).limit(500);
     if (error) throw new Error('Impossibile caricare le prenotazioni');
     // le richieste scadute ma non ancora aggiornate dal server si mostrano già come scadute
@@ -220,7 +220,7 @@ async function caricaAbbonamenti() {
     st.abbonamenti = a || [];
 }
 async function caricaProfili() {
-    const { data: p } = await supabase.from('profili').select('*, hub:hub(nome, codice), medico:medici(nome, cognome, genere)').order('creato_il', { ascending: false });
+    const { data: p } = await supabase.from('profili').select('*, hub:hub(nome, codice), medico:medici(nome, cognome, genere, titolo)').order('creato_il', { ascending: false });
     st.profili = p || [];
 }
 async function caricaOrari() {
@@ -250,7 +250,7 @@ async function caricaConti() {
 function sceltaMedico() {
     if (st.io.ruolo !== 'admin') return '';
     return `<div class="${card} mb-4"><label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Medico</span>
-        <select id="medico-gestito" class="${classeCampo}">${st.medici.map((m) => `<option value="${m.id}" ${m.id === st.medicoGestito ? 'selected' : ''}>${m.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(m.cognome)} ${esc(m.nome)} · ${esc(m.specializzazione)}</option>`).join('')}</select></label></div>`;
+        <select id="medico-gestito" class="${classeCampo}">${st.medici.map((m) => `<option value="${m.id}" ${m.id === st.medicoGestito ? 'selected' : ''}>${m?.genere === 'F' ? 'Dott.ssa' : m?.genere === 'A' && m?.titolo ? m.titolo : 'Dott.'} ${esc(m.cognome)} ${esc(m.nome)} · ${esc(m.specializzazione)}</option>`).join('')}</select></label></div>`;
 }
 
 // ---------------------------------------------------------------------
@@ -298,7 +298,7 @@ function disegnaElencoPrenotazioni() {
                 </div>
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-slate-800 truncate">${esc(p.paziente_cognome)} ${esc(p.paziente_nome)}</div>
-                    <div class="text-xs text-slate-500 truncate">${esc(p.prestazione?.nome || '')} · ${p.medico?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(p.medico?.cognome || '')} · ${p.canale === 'online' ? `online${p.hub?.nome && st.io.ruolo === 'admin' ? ` · ${esc(p.hub.nome)}` : ''}` : esc(p.hub?.nome || 'hub')}</div>
+                    <div class="text-xs text-slate-500 truncate">${esc(p.prestazione?.nome || '')} · ${p.medico?.genere === 'F' ? 'Dott.ssa' : p.medico?.genere === 'A' && p.medico?.titolo ? p.medico.titolo : 'Dott.'} ${esc(p.medico?.cognome || '')} · ${p.canale === 'online' ? `online${p.hub?.nome && st.io.ruolo === 'admin' ? ` · ${esc(p.hub.nome)}` : ''}` : esc(p.hub?.nome || 'hub')}</div>
                 </div>
                 <div class="shrink-0 text-right">${badgeStato(p.stato)}${p.stato === 'richiesta' && p.scadenza ? `<div class="text-xs text-slate-500 mt-1">rispondi entro ${esc(dataOra(p.scadenza))}</div>` : ''}</div>
             </button>
@@ -342,7 +342,7 @@ function apriPannello(id) {
             ${riga('Telefono', `<a class="text-skybrand-600" href="tel:${esc(p.paziente_telefono)}">${esc(p.paziente_telefono)}</a>`)}
             ${riga('Email', `<a class="text-skybrand-600" href="mailto:${esc(p.paziente_email)}">${esc(p.paziente_email)}</a>`)}
             ${riga('Prestazione', esc(p.prestazione?.nome))}
-            ${riga('Medico', `${p.medico?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(p.medico?.nome)} ${esc(p.medico?.cognome)}`)}
+            ${riga('Medico', `${p.medico?.genere === 'F' ? 'Dott.ssa' : p.medico?.genere === 'A' && p.medico?.titolo ? p.medico.titolo : 'Dott.'} ${esc(p.medico?.nome)} ${esc(p.medico?.cognome)}`)}
             ${riga('Canale', p.canale === 'online' ? 'Online dal paziente' : `Hub: ${esc(p.hub?.nome)} (${esc(p.hub?.codice)})`)}
             ${riga('Ticket', quotaTesto)}
             ${riga('Ticket incassato da', p.hub ? `${esc(p.hub.nome)}${p.canale === 'online' ? ' (hub di riferimento)' : ''}` : '')}
@@ -478,7 +478,7 @@ function disegnaNuova() {
                 <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">1 · Medico e prestazione</h2>
                 ${medico ? `
                     <div class="flex items-center justify-between gap-3 rounded-xl bg-skybrand-50 border border-skybrand-200 p-3">
-                        <div><div class="font-semibold text-slate-900">${medico?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(medico.nome)} ${esc(medico.cognome)}</div><div class="text-xs text-slate-500">${esc(medico.specializzazione)} · ${esc(medico.citta)}${medico.telefono ? ` · tel. ${esc(medico.telefono)}` : ''}</div></div>
+                        <div><div class="font-semibold text-slate-900">${medico?.genere === 'F' ? 'Dott.ssa' : medico?.genere === 'A' && medico?.titolo ? medico.titolo : 'Dott.'} ${esc(medico.nome)} ${esc(medico.cognome)}</div><div class="text-xs text-slate-500">${esc(medico.specializzazione)} · ${esc(medico.citta)}${medico.telefono ? ` · tel. ${esc(medico.telefono)}` : ''}</div></div>
                         <button type="button" data-cambia-medico class="text-sm text-skybrand-600 font-medium">Cambia</button>
                     </div>
                     <div class="space-y-2">${prest.map((p) => `
@@ -537,7 +537,7 @@ function disegnaRisultatiMedici(medici) {
     if (!el) return;
     el.innerHTML = trovati.length ? trovati.map((m) => `
         <button type="button" data-scegli-medico="${m.id}" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-skybrand-300 transition">
-            <div class="font-semibold text-slate-900">${m?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(m.nome)} ${esc(m.cognome)}</div>
+            <div class="font-semibold text-slate-900">${m?.genere === 'F' ? 'Dott.ssa' : m?.genere === 'A' && m?.titolo ? m.titolo : 'Dott.'} ${esc(m.nome)} ${esc(m.cognome)}</div>
             <div class="text-xs text-slate-500">${esc(m.specializzazione)} · ${esc(m.citta)}</div>
         </button>`).join('')
         : `<p class="text-sm text-slate-500 py-3">Nessun medico trovato${st.medici.length ? '' : ': non ci sono ancora medici con prestazioni attive'}.</p>`;
@@ -593,7 +593,7 @@ function disegnaEsitoNuova() {
             </div>
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div><dt class="text-xs text-slate-500">Paziente</dt><dd class="font-medium text-slate-900">${esc(e.paziente.nome)} ${esc(e.paziente.cognome)}</dd></div>
-                <div><dt class="text-xs text-slate-500">Medico</dt><dd class="font-medium text-slate-900">${e.medico?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(e.medico?.nome)} ${esc(e.medico?.cognome)}</dd></div>
+                <div><dt class="text-xs text-slate-500">Medico</dt><dd class="font-medium text-slate-900">${e.medico?.genere === 'F' ? 'Dott.ssa' : e.medico?.genere === 'A' && e.medico?.titolo ? e.medico.titolo : 'Dott.'} ${esc(e.medico?.nome)} ${esc(e.medico?.cognome)}</dd></div>
                 <div><dt class="text-xs text-slate-500">Prestazione</dt><dd class="font-medium text-slate-900">${esc(e.prestazione?.nome)}</dd></div>
                 <div><dt class="text-xs text-slate-500">Data e ora</dt><dd class="font-medium text-slate-900">${esc(quando(e.inizio))}</dd></div>
                 <div><dt class="text-xs text-slate-500">Ticket</dt><dd class="font-medium text-slate-900">${ticketDi(e.prestazione?.prezzo_visita_cents, st.percento) ? `${euro(ticketDi(e.prestazione?.prezzo_visita_cents, st.percento))} da incassare` : 'nessun ticket'}</dd></div>
@@ -789,8 +789,14 @@ function disegnaTariffe() {
                 <form data-medico="salva_profilo" class="${card} space-y-3">
                     <h2 class="font-bold text-slate-900">Dati del medico e dello studio</h2>
                     <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Genere</span>
-                    <select name="genere" required class="${classeCampo}"><option value="">Scegli...</option><option value="F" ${medico.genere === 'F' ? 'selected' : ''}>Donna (Dott.ssa)</option><option value="M" ${medico.genere === 'M' ? 'selected' : ''}>Uomo (Dott.)</option></select></label>
-                    <p class="text-xs text-slate-500 -mt-1">Serve per scrivere correttamente "Dott." o "Dott.ssa" e "Specializzato" o "Specializzata" nella ricerca e nelle email.</p>
+                    <select name="genere" required data-genere class="${classeCampo}"><option value="">Scegli...</option><option value="M" ${medico.genere === 'M' ? 'selected' : ''}>Maschile (Dott., Specializzato)</option><option value="F" ${medico.genere === 'F' ? 'selected' : ''}>Femminile (Dott.ssa, Specializzata)</option><option value="A" ${medico.genere === 'A' ? 'selected' : ''}>Altro (da specificare)</option></select></label>
+                <div data-genere-altro ${medico.genere === 'A' ? '' : 'hidden'} class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Titolo con cui essere identificato/a</span>
+                        <input name="titolo" maxlength="15" value="${esc(medico.titolo || '')}" placeholder="Es. Dott., Dott.ssa, Dr." class="${classeCampo}"></label>
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Dicitura della specializzazione</span>
+                        <input name="dicitura_specializzazione" maxlength="30" value="${esc(medico.dicitura_specializzazione || '')}" placeholder="Es. Specialista in" class="${classeCampo}"></label>
+                </div>
+                    <p class="text-xs text-slate-500 -mt-1">Serve per indicare correttamente titolo e specializzazione nella ricerca, nelle pagine e nelle email. Con "Altro" il professionista sceglie come essere identificato/a.</p>
                     <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Indirizzo dello studio</span>
                         <input name="indirizzo" maxlength="160" value="${esc(medico.indirizzo || '')}" class="${classeCampo}" placeholder="Comunicato al paziente con la conferma"></label>
                     <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Telefono (visibile agli hub)</span>
@@ -911,7 +917,13 @@ function disegnaMedici() {
                 <h2 class="font-bold text-slate-900">Nuovo medico</h2>
                 <div class="grid grid-cols-2 gap-3">${campo('nome', 'Nome', 'text', 'required')}${campo('cognome', 'Cognome', 'text', 'required')}</div>
                 <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Genere</span>
-                    <select name="genere" required class="${classeCampo}"><option value="">Scegli...</option><option value="F" ${'' === 'F' ? 'selected' : ''}>Donna (Dott.ssa)</option><option value="M" ${'' === 'M' ? 'selected' : ''}>Uomo (Dott.)</option></select></label>
+                    <select name="genere" required data-genere class="${classeCampo}"><option value="">Scegli...</option><option value="M" ${'' === 'M' ? 'selected' : ''}>Maschile (Dott., Specializzato)</option><option value="F" ${'' === 'F' ? 'selected' : ''}>Femminile (Dott.ssa, Specializzata)</option><option value="A" ${'' === 'A' ? 'selected' : ''}>Altro (da specificare)</option></select></label>
+                <div data-genere-altro ${'' === 'A' ? '' : 'hidden'} class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Titolo con cui essere identificato/a</span>
+                        <input name="titolo" maxlength="15" value="" placeholder="Es. Dott., Dott.ssa, Dr." class="${classeCampo}"></label>
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Dicitura della specializzazione</span>
+                        <input name="dicitura_specializzazione" maxlength="30" value="" placeholder="Es. Specialista in" class="${classeCampo}"></label>
+                </div>
                 <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Specializzazione</span>
                     <select name="specializzazione" required class="${classeCampo}"><option value="">Scegli dall'elenco</option>${(window.SPECIALIZZAZIONI || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select></label>
                 <div class="grid grid-cols-2 gap-3">${campo('citta', 'Città', 'text', 'required')}${campo('telefono', 'Telefono', 'tel')}</div>
@@ -926,7 +938,7 @@ function disegnaMedici() {
                     const pr = st.prestazioni.filter((p) => p.medico_id === m.id);
                     return `<div class="${card} space-y-3">
                         <div class="flex items-start justify-between gap-3">
-                            <div><div class="font-semibold text-slate-900">${m?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(m.nome)} ${esc(m.cognome)}</div>
+                            <div><div class="font-semibold text-slate-900">${m?.genere === 'F' ? 'Dott.ssa' : m?.genere === 'A' && m?.titolo ? m.titolo : 'Dott.'} ${esc(m.nome)} ${esc(m.cognome)}</div>
                             <div class="text-xs text-slate-500">${esc(m.specializzazione)} · ${esc(m.citta)} · ${esc(m.email)}</div></div>
                             ${interruttore('medici', m.id, m.attivo)}
                         </div>
@@ -1000,7 +1012,7 @@ function disegnaUtenze() {
                 <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Hub collegato (per "Hub" e "Medico che fa anche da hub")</span>
                     <select name="hub_id" class="${classeCampo}"><option value="">Nessuno</option>${st.hub.map((h) => `<option value="${h.id}">${esc(h.nome)} (${esc(h.codice)})</option>`).join('')}</select></label>
                 <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Medico collegato (per "Medico" e "Medico che fa anche da hub")</span>
-                    <select name="medico_id" class="${classeCampo}"><option value="">Nessuno</option>${st.medici.map((m) => `<option value="${m.id}">${m.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(m.cognome)} ${esc(m.nome)} · ${esc(m.specializzazione)}</option>`).join('')}</select></label>
+                    <select name="medico_id" class="${classeCampo}"><option value="">Nessuno</option>${st.medici.map((m) => `<option value="${m.id}">${m?.genere === 'F' ? 'Dott.ssa' : m?.genere === 'A' && m?.titolo ? m.titolo : 'Dott.'} ${esc(m.cognome)} ${esc(m.nome)} · ${esc(m.specializzazione)}</option>`).join('')}</select></label>
                 <button type="submit" class="${btnPrimario} w-full">Crea e invia l'invito</button>
             </form>
             <div class="lg:col-span-3 space-y-3">
@@ -1458,6 +1470,16 @@ document.addEventListener('input', (e) => {
     }
 });
 document.addEventListener('change', (e) => {
+    // genere "Altro": compaiono titolo e dicitura scelti dal professionista
+    if (e.target.hasAttribute('data-genere')) {
+        const altro = e.target.closest('form')?.querySelector('[data-genere-altro]');
+        if (altro) {
+            altro.hidden = e.target.value !== 'A';
+            const titolo = altro.querySelector('[name=titolo]');
+            titolo.required = e.target.value === 'A';
+            if (e.target.value === 'A') titolo.focus();
+        }
+    }
     if (e.target.hasAttribute('data-listino-spec')) { st.listinoSpec = e.target.value; return disegnaTariffe(); }
     // spuntando una prestazione del listino il cursore va sulla tariffa
     if (e.target.hasAttribute('data-offerta') && e.target.checked) {

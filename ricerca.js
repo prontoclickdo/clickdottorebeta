@@ -100,8 +100,8 @@ async function cercaMedici(specialita, luogo) {
                 <div class="flex items-start gap-3">
                     <div class="w-12 h-12 rounded-xl bg-skybrand-50 text-skybrand-500 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-user-doctor"></i></div>
                     <div class="min-w-0">
-                        <h3 class="font-bold text-slate-900">${m?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(m.nome)} ${esc(m.cognome)}</h3>
-                        <p class="text-sm text-slate-500">${m.genere === 'F' ? 'Specializzata' : m.genere === 'M' ? 'Specializzato' : 'Specializzato/a'} in ${esc(m.specializzazione)}</p>
+                        <h3 class="font-bold text-slate-900">${m?.genere === 'F' ? 'Dott.ssa' : m?.genere === 'A' && m?.titolo ? m.titolo : 'Dott.'} ${esc(m.nome)} ${esc(m.cognome)}</h3>
+                        <p class="text-sm text-slate-500">${m.genere === 'F' ? 'Specializzata in' : m.genere === 'M' ? 'Specializzato in' : m.genere === 'A' ? (m.dicitura_specializzazione || 'Specialista in') : 'Specializzato/a in'} ${esc(m.specializzazione)}</p>
                         <p class="text-xs text-slate-500 mt-0.5"><i class="fa-solid fa-location-dot text-skybrand-500 mr-1"></i>${esc(m.citta)}</p>
                     </div>
                 </div>

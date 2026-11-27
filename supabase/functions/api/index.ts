@@ -431,7 +431,23 @@ const TESTO_POLITICA = "Puoi annullare dalla tua area personale: il ticket viene
 // ---------------------------------------------------------------------
 // deno-lint-ignore no-explicit-any
 type Pren = any;
-const nomeMedico = (p: Pren) => `${p.medico.genere === "F" ? "Dott.ssa" : "Dott."} ${p.medico.nome} ${p.medico.cognome}`;
+// titolo del medico: "Dott.ssa" (femminile), il titolo scelto ("Altro"), altrimenti "Dott."
+// deno-lint-ignore no-explicit-any
+const titoloMedico = (m: any) => m?.genere === "F" ? "Dott.ssa" : m?.genere === "A" && m?.titolo ? m.titolo : "Dott.";
+const nomeMedico = (p: Pren) => `${titoloMedico(p.medico)} ${p.medico.nome} ${p.medico.cognome}`;
+
+// genere, titolo e dicitura scelti dal medico (solo lettere, spazi, punti, apostrofi, trattini e asterischi)
+const TESTO_TITOLO = /^[\p{L} .'*-]{1,15}$/u;
+const TESTO_DICITURA = /^[\p{L} .'*-]{1,30}$/u;
+function datiGenere(body: Record<string, unknown>) {
+  const genere = ["M", "F", "A"].includes(String(body.genere)) ? String(body.genere) : null;
+  if (genere !== "A") return { genere, titolo: null, dicitura_specializzazione: null };
+  const titolo = String(body.titolo ?? "").trim();
+  const dicitura = String(body.dicitura_specializzazione ?? "").trim();
+  if (!TESTO_TITOLO.test(titolo)) throw new HttpError(400, "Indica il titolo con cui vuoi essere identificato/a (max 15 caratteri, solo lettere e punteggiatura semplice)");
+  if (dicitura && !TESTO_DICITURA.test(dicitura)) throw new HttpError(400, "Dicitura della specializzazione non valida (max 30 caratteri, solo lettere e punteggiatura semplice)");
+  return { genere, titolo, dicitura_specializzazione: dicitura || null };
+}
 const cella = (k: string, v: string) =>
   `<tr><td style="color:#64748b;padding-right:12px;vertical-align:top">${k}</td><td>${v}</td></tr>`;
 
@@ -653,7 +669,7 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
 async function statoPrenotazione(req: Request) {
   const sessionId = new URL(req.url).searchParams.get("session_id") ?? "";
   if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(sessionId)) throw new HttpError(400, "Sessione non valida");
-  const campi = "id, codice, stato, canale, quota_cents, pagata_il, visita_il, stripe_account_id, medico:medici(nome, cognome, genere, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)";
+  const campi = "id, codice, stato, canale, quota_cents, pagata_il, visita_il, stripe_account_id, medico:medici(nome, cognome, genere, titolo, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)";
   let { data: p } = await db.from("prenotazioni").select(campi).eq("stripe_session_id", sessionId).maybeSingle();
   if (!p || !p.pagata_il) {
     // il pagamento potrebbe non essere ancora registrato: controllo direttamente con Stripe (sul conto dell'hub)
@@ -883,7 +899,7 @@ async function infoBollettino(req: Request) {
   return json(req, {
     codice: p.codice, stato: p.stato, pagata: !!p.pagata_il, quota_cents: p.quota_cents, visita_il: p.visita_il,
     paziente: `${p.paziente_nome} ${String(p.paziente_cognome).charAt(0)}.`,
-    medico: { nome: p.medico.nome, cognome: p.medico.cognome, genere: p.medico.genere ?? null, specializzazione: p.medico.specializzazione, citta: p.medico.citta },
+    medico: { nome: p.medico.nome, cognome: p.medico.cognome, genere: p.medico.genere ?? null, titolo: p.medico.titolo ?? null, specializzazione: p.medico.specializzazione, citta: p.medico.citta },
     prestazione: p.prestazione.nome, hub: p.hub?.nome ?? null,
     pagabile: p.stato === "confermata" && !p.pagata_il,
   });
@@ -1197,7 +1213,7 @@ async function gestioneMedico(req: Request) {
     }
     case "salva_profilo": {
       const { error } = await db.from("medici").update({
-        ...(body.genere !== undefined ? { genere: ["M", "F"].includes(String(body.genere)) ? String(body.genere) : null } : {}),
+        ...(body.genere !== undefined ? datiGenere(body) : {}),
         indirizzo: testo(body.indirizzo, "indirizzo", 160, false) || null,
         telefono: testo(body.telefono, "telefono", 30, false) || null,
       }).eq("id", medicoId);
@@ -1299,7 +1315,7 @@ async function admin(req: Request) {
       const riga = {
         nome: testo(body.nome, "nome", 60), cognome: testo(body.cognome, "cognome", 60),
         specializzazione: testo(body.specializzazione, "specializzazione", 120),
-        genere: ["M", "F"].includes(String(body.genere)) ? String(body.genere) : null,
+        ...datiGenere(body),
         citta: testo(body.citta, "città", 80), indirizzo: testo(body.indirizzo, "indirizzo", 160, false) || null,
         email: testo(body.email, "email", 120).toLowerCase(), telefono: testo(body.telefono, "telefono", 30, false) || null,
       };
@@ -1742,8 +1758,8 @@ async function prezzoStripe(p: Piano): Promise<string> {
 
 async function nomeSoggetto(s: Soggetto): Promise<string> {
   if (s.medico_id) {
-    const { data } = await db.from("medici").select("nome, cognome, genere").eq("id", s.medico_id).maybeSingle();
-    return data ? `${data.genere === "F" ? "Dott.ssa" : "Dott."} ${data.nome} ${data.cognome}` : "Medico";
+    const { data } = await db.from("medici").select("nome, cognome, genere, titolo").eq("id", s.medico_id).maybeSingle();
+    return data ? `${titoloMedico(data)} ${data.nome} ${data.cognome}` : "Medico";
   }
   const { data } = await db.from("hub").select("nome").eq("id", s.hub_id!).maybeSingle();
   return data?.nome ?? "Hub";
