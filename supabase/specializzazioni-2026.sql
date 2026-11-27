@@ -33,7 +33,6 @@ insert into nuove_specializzazioni (precedente, attuale) values
     ('Malattie Infettive (Infettivologia)', 'Malattie Infettive e Tropicali'),
     ('Medicina Aeronautica e Spaziale', 'Medicina del Lavoro'),
     ('Medicina dello Sport', 'Medicina dello sport e dell’esercizio fisico'),
-    ('Medicina Generale (Medico di Famiglia)', 'Medicina di comunità e delle cure primarie'),
     ('Medicina Interna', 'Medicina interna'),
     ('Medicina Nucleare', 'Medicina nucleare'),
     ('Medicina Termale', 'Medicina termale'),

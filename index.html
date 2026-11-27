@@ -95,7 +95,7 @@
                     <p class="hero-type" aria-label="Trova un dermatologo, uno psicologo, un dentista e tanti altri professionisti">
                         <span>Trova</span>
                         <span class="hero-type-box" aria-hidden="true">
-                            <span class="hero-type-sizer">il tuo medico di base</span>
+                            <span class="hero-type-sizer">un fisioterapista</span>
                             <span class="hero-type-live"><span id="hero-type-word">un dermatologo</span></span>
                         </span>
                     </p>
@@ -249,7 +249,7 @@
         </div>
     </footer>
 
-    <script src="specializzazioni.js?v=3"></script>
+    <script src="specializzazioni.js?v=4"></script>
     <script src="prestazioni-catalogo.js?v=3"></script>
     <script src="suggerimenti-medici.js?v=1"></script>
     <script>
@@ -8716,7 +8716,7 @@ Zungri|VV|`;
             var word = document.getElementById('hero-type-word');
             if (!word) return;
             var box = word.parentNode;                              // contenitore: la dissolvenza è su di lui, non sul testo sfumato
-            var phrases = ['un dermatologo', 'uno psicologo', 'un dentista', 'un cardiologo', 'una ginecologa', 'un pediatra', 'un fisioterapista', 'un oculista', 'un nutrizionista', 'il tuo medico di base'];
+            var phrases = ['un dermatologo', 'uno psicologo', 'un dentista', 'un cardiologo', 'una ginecologa', 'un pediatra', 'un fisioterapista', 'un oculista', 'un nutrizionista'];
             var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             var OUT = 2200, IN = 1500;                              // durata dissolvenza in uscita / in entrata (ms)
             var i = 0, busy = false;
