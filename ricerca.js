@@ -110,7 +110,9 @@ async function cercaMedici(specialita, luogo) {
                     </ul>
                 <a href="prenota.html?medico=${encodeURIComponent(m.id)}" class="inline-flex items-center gap-2 text-base font-semibold text-skybrand-600 hover:text-skybrand-700">${pr.length > 4 ? `Vedi tutte le ${pr.length} prestazioni e i prezzi` : 'Vedi prestazioni e prezzi'} <i class="fa-solid fa-arrow-right text-base"></i></a>
                 ${minimo != null ? `<p class="text-xs text-slate-500">Prestazioni a partire da <strong class="text-slate-900">${euro(minimo)}</strong></p>` : ''}
-                <a href="prenota.html?medico=${encodeURIComponent(m.id)}" class="mt-auto text-center px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition">Prenota online</a>
+                ${m.prenotabile === false
+                    ? `<div class="mt-auto text-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 text-slate-500 border border-slate-200"><i class="fa-solid fa-lock mr-1.5"></i>Al momento non disponibile per prenotazioni</div>`
+                    : `<a href="prenota.html?medico=${encodeURIComponent(m.id)}" class="mt-auto text-center px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition">Prenota online</a>`}
             </article>`;
     }).join('');
 }

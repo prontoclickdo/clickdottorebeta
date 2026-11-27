@@ -214,8 +214,10 @@
             $('caricamento').hidden = true;
             $('contenuto').hidden = false;
 
-            if (!paziente) {
-                // chi non ha fatto l'accesso vede tutte le prestazioni con i prezzi; per prenotare accede o si registra
+            const nonPrenotabile = m.prenotabile === false;
+            if (!paziente || nonPrenotabile) {
+                // chi non ha fatto l'accesso vede tutte le prestazioni con i prezzi; per prenotare accede o si registra.
+                // Medico con abbonamento sospeso: prestazioni visibili, prenotazioni bloccate per tutti.
                 const tornaA = (pid) => `prenota.html?medico=${encodeURIComponent(medicoId)}${pid ? `&prestazione=${encodeURIComponent(pid)}` : ''}`;
                 const ordinate = [...pr].sort((a, b) => (/visita/i.test(b.nome) - /visita/i.test(a.nome)) || a.nome.localeCompare(b.nome, 'it'));
                 $('listino-nota').textContent = `Prezzi stabiliti dal medico, da pagare al medico. Per prenotare online si aggiunge un ticket di prenotazione pari al ${percentoTesto(percento)} della tariffa, da pagare solo dopo la conferma.`;
@@ -227,10 +229,14 @@
                         </div>
                         <div class="flex items-center justify-between sm:justify-end gap-3 shrink-0">
                             <span class="font-bold text-slate-900">${p.prezzo_visita_cents != null ? euro(p.prezzo_visita_cents) : '<span class="text-sm font-medium text-slate-500">Tariffa da concordare</span>'}</span>
-                            ${staff ? '' : `<a href="accedi.html?torna=${encodeURIComponent(tornaA(p.id))}" data-prenota-anonimo="${esc(tornaA(p.id))}" class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-skybrand-500 hover:bg-skybrand-600 text-white transition">Prenota</a>`}
+                            ${staff || nonPrenotabile ? '' : `<a href="accedi.html?torna=${encodeURIComponent(tornaA(p.id))}" data-prenota-anonimo="${esc(tornaA(p.id))}" class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-skybrand-500 hover:bg-skybrand-600 text-white transition">Prenota</a>`}
                         </div>
                     </div>`).join('');
                 $('listino-pubblico').hidden = false;
+                if (nonPrenotabile) {
+                    $('medico-info').insertAdjacentHTML('afterend', '<p class="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5"><i class="fa-solid fa-lock mr-1.5"></i>Al momento non disponibile per prenotazioni</p>');
+                    return;
+                }
                 if (staff) { $('personale').hidden = false; return; }
                 $('link-accedi').href = `accedi.html?torna=${encodeURIComponent(tornaA(prestazionePreferita))}`;
                 $('link-registrati').href = `registrati.html?torna=${encodeURIComponent(tornaA(prestazionePreferita))}`;
