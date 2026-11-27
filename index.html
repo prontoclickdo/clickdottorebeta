@@ -275,6 +275,7 @@
     </footer>
 
     <script src="specializzazioni.js?v=1"></script>
+    <script src="prestazioni-catalogo.js?v=1"></script>
     <script>
         const state = { isAutoSelecting: false };
 
@@ -298,6 +299,15 @@
         const RAW_SPECIALTIES = window.SPECIALIZZAZIONI || [];
 
         const SPECIALTIES = RAW_SPECIALTIES.map((name) => ({ name }));
+        // prestazioni del listino (senza doppioni), cercabili dalla stessa casella
+        const PRESTAZIONI = (() => {
+            const viste = new Map();
+            Object.values(window.CATALOGO_PRESTAZIONI || {}).forEach((voci) => voci.forEach(([nome]) => {
+                const k = nome.toLowerCase();
+                if (!viste.has(k)) viste.set(k, { name: nome, prestazione: true });
+            }));
+            return [...viste.values()];
+        })();
 
         // ELENCO COMPLETO DEI CAPOLUOGHI E CITTÀ D'ITALIA CON RELATIVI CAP (121 CAPOLUOGHI)
         const CITIES_WITH_CAP = [
@@ -8486,7 +8496,15 @@ Zungri|VV|`;
                     if (name.startsWith(query)) startsWith.push(s);
                     else if (name.split(/[\s(\/,'-]+/).some((w) => w.startsWith(query))) wordStart.push(s);
                 });
-                matches = startsWith.sort(byName).concat(wordStart.sort(byName));
+                // poi le prestazioni, con lo stesso criterio
+                const prestInizio = [];
+                const prestParola = [];
+                PRESTAZIONI.forEach((s) => {
+                    const name = normalizeText(s.name);
+                    if (name.startsWith(query)) prestInizio.push(s);
+                    else if (name.split(/[\s(\/,'-]+/).some((w) => w.startsWith(query))) prestParola.push(s);
+                });
+                matches = startsWith.sort(byName).concat(wordStart.sort(byName), prestInizio.sort(byName), prestParola.sort(byName));
             }
 
             if (!matches.length) {
@@ -8502,9 +8520,16 @@ Zungri|VV|`;
                 row.addEventListener('click', () => selectAutocomplete('specialty-input', specialty.name, 'specialty-autocomplete'));
 
                 const label = document.createElement('span');
+                label.className = 'flex-1 min-w-0';
                 label.textContent = specialty.name;
 
                 row.append(label);
+                if (specialty.prestazione) {
+                    const tag = document.createElement('span');
+                    tag.className = 'shrink-0 text-[11px] font-semibold text-slate-400';
+                    tag.textContent = 'Prestazione';
+                    row.append(tag);
+                }
                 container.appendChild(row);
             });
             container.classList.remove('hidden');
@@ -8699,7 +8724,7 @@ Zungri|VV|`;
             setInterval(next, 5000);
         })();
     </script>
-    <script type="module" src="ricerca.js?v=3"></script>
+    <script type="module" src="ricerca.js?v=4"></script>
     <script type="module">
         // chi ha già effettuato l'accesso vede "La mia area" al posto di Accedi / Registrati
         import { supabase } from './app.js';

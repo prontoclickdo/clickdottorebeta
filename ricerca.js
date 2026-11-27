@@ -42,7 +42,27 @@ async function cercaMedici(specialita, luogo) {
     if (citta) q = q.ilike('citta', `%${citta}%`);
 
     const { data: trovati, error } = await q;
-    const medici = s ? (trovati || []).filter((m) => corrisponde(m, s)) : trovati;
+    let medici = s ? (trovati || []).filter((m) => corrisponde(m, s)) : (trovati || []);
+
+    // medici che eseguono la prestazione cercata (es. "Ecocardiogramma", "Holter cardiaco 24 ore")
+    let prestCercata = null;
+    if (s && !error) {
+        const { data: perPrestazione } = await supabase.from('prestazioni_pubbliche').select('medico_id, nome')
+            .ilike('nome', `%${s}%`).limit(1000);
+        if (perPrestazione?.length) {
+            prestCercata = norm(specialita);
+            const gia = new Set(medici.map((m) => m.id));
+            const altri = [...new Set(perPrestazione.map((p) => p.medico_id))].filter((id) => !gia.has(id));
+            if (altri.length) {
+                let q2 = supabase.from('medici_pubblici').select('*').in('id', altri);
+                if (citta) q2 = q2.ilike('citta', `%${citta}%`);
+                const { data: extra } = await q2;
+                medici = medici.concat(extra || []);
+            }
+        }
+    }
+    // in ordine alfabetico per cognome e nome
+    medici.sort((a, b) => `${a.cognome} ${a.nome}`.localeCompare(`${b.cognome} ${b.nome}`, 'it', { sensitivity: 'base' }));
     if (error) {
         el.innerHTML = `<div class="col-span-full bg-white border border-slate-200 rounded-2xl p-10 text-center text-sm text-slate-500">Ricerca non riuscita, riprova tra poco.</div>`;
         return;
@@ -67,9 +87,10 @@ async function cercaMedici(specialita, luogo) {
     }
 
     el.innerHTML = conPrestazioni.map((m) => {
-        // prima le visite, poi le altre prestazioni in ordine di prezzo
+        // prima la prestazione cercata, poi le visite, poi le altre in ordine di prezzo
+        const cercata = (p) => !!prestCercata && norm(p.nome).includes(prestCercata);
         const pr = (prestazioni || []).filter((p) => p.medico_id === m.id)
-            .sort((a, b) => (/visita/i.test(b.nome) - /visita/i.test(a.nome)) || ((a.prezzo_visita_cents ?? 1e9) - (b.prezzo_visita_cents ?? 1e9)));
+            .sort((a, b) => (cercata(b) - cercata(a)) || (/visita/i.test(b.nome) - /visita/i.test(a.nome)) || ((a.prezzo_visita_cents ?? 1e9) - (b.prezzo_visita_cents ?? 1e9)));
         const prezzi = pr.map((p) => p.prezzo_visita_cents).filter((c) => c != null);
         const minimo = prezzi.length ? Math.min(...prezzi) : null;
         return `
@@ -83,7 +104,7 @@ async function cercaMedici(specialita, luogo) {
                     </div>
                 </div>
                 <ul class="text-xs text-slate-600 space-y-1.5">${pr.slice(0, 4).map((p) => `
-                    <li class="flex items-baseline justify-between gap-3"><span class="min-w-0"><i class="fa-solid fa-check text-skybrand-500 mr-1.5"></i>${esc(p.nome)}</span>${p.prezzo_visita_cents != null ? `<span class="shrink-0 font-semibold text-slate-900">${euro(p.prezzo_visita_cents)}</span>` : ''}</li>`).join('')}
+                    <li class="flex items-baseline justify-between gap-3"><span class="min-w-0 ${cercata(p) ? 'font-semibold text-skybrand-700' : ''}"><i class="fa-solid fa-check text-skybrand-500 mr-1.5"></i>${esc(p.nome)}</span>${p.prezzo_visita_cents != null ? `<span class="shrink-0 font-semibold text-slate-900">${euro(p.prezzo_visita_cents)}</span>` : ''}</li>`).join('')}
                     ${pr.length > 4 ? `<li class="text-slate-400">e altre ${pr.length - 4} prestazioni</li>` : ''}</ul>
                 ${minimo != null ? `<p class="text-xs text-slate-500">Prestazioni a partire da <strong class="text-slate-900">${euro(minimo)}</strong></p>` : ''}
                 <a href="prenota.html?medico=${encodeURIComponent(m.id)}" class="mt-auto text-center px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition">Prenota online</a>
