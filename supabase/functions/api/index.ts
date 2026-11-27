@@ -18,11 +18,13 @@
 //   POST /api/aggiorna-profilo        il paziente aggiorna i propri dati
 //   GET  /api/captcha                 domanda di verifica per il modulo Lavora con noi
 //   POST /api/candidatura             richiesta di adesione di un medico o di un hub
-//   POST /api/promemoria              promemoria al paziente il giorno prima della visita (chiamato ogni ora da pg_cron)
+//   POST /api/promemoria              promemoria al paziente il giorno prima della visita (chiamato ogni ora da pg_cron;
+//                                     richiede l'intestazione x-cron-secret, vedi supabase/segreto-cron.sql)
 //   POST /api/stato-abbonamento       stato dell'abbonamento mensile del medico o dell'hub
 //   POST /api/collega-stripe          l'hub collega o completa il proprio conto Stripe (Stripe Connect)
 //   POST /api/stato-stripe-hub        stato del conto Stripe collegato dell'hub
-//   POST /api/verifica-pagamenti      controlla con Stripe i ticket pagati sui conti degli hub (ogni 5 minuti da pg_cron)
+//   POST /api/verifica-pagamenti      controlla con Stripe i ticket pagati sui conti degli hub (ogni 5 minuti da pg_cron;
+//                                     richiede l'intestazione x-cron-secret)
 //   POST /api/abbonati                avvia l'abbonamento mensile (Stripe Checkout)
 //   POST /api/portale-abbonamento     metodo di pagamento, fatture e disdetta (portale clienti Stripe)
 //   POST /api/cambia-piano            passaggio a un altro piano
@@ -188,6 +190,22 @@ async function utente(req: Request, richiediAbbonamento = true): Promise<Profilo
     if (ok !== true) throw new HttpError(402, "Abbonamento non attivo: attivalo o rinnovalo dall'area riservata");
   }
   return profilo as Profilo;
+}
+
+// Chiamate automatiche (pg_cron): valide solo con il codice segreto salvato in public.chiavi_interne,
+// che il database invia nell'intestazione x-cron-secret. Senza codice la richiesta è rifiutata.
+let codiceCron: string | null = null;
+async function soloCron(req: Request) {
+  const ricevuto = req.headers.get("x-cron-secret") ?? "";
+  if (!codiceCron) {
+    const { data } = await db.from("chiavi_interne").select("valore").eq("nome", "cron").maybeSingle();
+    codiceCron = data?.valore ?? null;
+  }
+  const atteso = codiceCron ?? "";
+  // confronto a tempo costante
+  let diverso = atteso.length === 0 || ricevuto.length !== atteso.length ? 1 : 0;
+  for (let i = 0; i < atteso.length; i++) diverso |= atteso.charCodeAt(i) ^ (ricevuto.charCodeAt(i) || 0);
+  if (diverso) throw new HttpError(401, "Non autorizzato");
 }
 
 // Paziente registrato: restituisce l'id se il token appartiene a un account paziente, altrimenti null
@@ -697,6 +715,7 @@ async function statoPrenotazione(req: Request) {
 // I pagamenti sui conti degli hub non arrivano al webhook di Click Dottore: ogni 5 minuti pg_cron
 // chiama questo percorso, che controlla con Stripe le sessioni di pagamento ancora aperte
 async function verificaPagamenti(req: Request) {
+  await soloCron(req);
   const da = new Date(Date.now() - 3 * 24 * ORA).toISOString();
   const { data: righe } = await db.from("prenotazioni").select("id, stripe_session_id, stripe_account_id")
     .is("pagata_il", null).not("stripe_session_id", "is", null).not("stripe_account_id", "is", null)
@@ -1544,6 +1563,7 @@ async function registrati(req: Request) {
 // Promemoria il giorno prima della visita. Chiamato ogni ora da pg_cron: la funzione del database
 // "prenotazioni_da_ricordare" segna e restituisce una sola volta le visite confermate di domani (dalle 9 in poi).
 async function promemoria(req: Request) {
+  await soloCron(req);
   const { data: righe, error } = await db.rpc("prenotazioni_da_ricordare");
   if (error) { console.error(error); throw new HttpError(500, "Promemoria non disponibili"); }
   let inviati = 0;
