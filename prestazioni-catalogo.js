@@ -9,7 +9,7 @@ window.CATALOGO_PRESTAZIONI = {
         ['Prima visita allergologica', 30], ['Visita allergologica di controllo', 20],
         ['Prick test per inalanti', 30], ['Prick test per alimenti', 30],
         ['Prick by prick', 30], ['Patch test (test epicutanei)', 30],
-        ['Test di provocazione orale', 120], ['Spirometria semplice', 20],
+        ['Test di provocazione orale (solo in strutture attrezzate per le reazioni allergiche gravi)', 120], ['Spirometria semplice', 20],
         ['Spirometria con test di broncodilatazione', 30], ['Misurazione dell\'ossido nitrico esalato (FeNO)', 15],
         ['Somministrazione di immunoterapia specifica (vaccino)', 30],
     ],
@@ -43,8 +43,8 @@ window.CATALOGO_PRESTAZIONI = {
         ['Ecocardiogramma', 30], ['Elettrocardiogramma (ECG)', 15],
     ],
     'Chiropratica': [
-        ['Prima visita chiropratica', 45], ['Trattamento chiropratico', 30],
-        ['Valutazione posturale', 40], ['Trattamento chiropratico pediatrico', 30],
+        ['Prima visita chiropratica (solo dottori in chiropratica)', 45], ['Trattamento chiropratico (solo dottori in chiropratica)', 30],
+        ['Valutazione posturale', 40], ['Trattamento chiropratico pediatrico (solo dottori in chiropratica)', 30],
     ],
     'Chirurgia Generale': [
         ['Prima visita chirurgica', 30], ['Visita chirurgica di controllo', 20],
@@ -157,12 +157,12 @@ window.CATALOGO_PRESTAZIONI = {
         ['Realizzazione di bite (placca occlusale)', 45], ['Controllo e regolazione del bite', 20],
     ],
     'Igiene e Medicina Preventiva': [
-        ['Consulenza per viaggi internazionali (medicina dei viaggi)', 30], ['Vaccinazione per viaggiatori', 20],
+        ['Consulenza per viaggi internazionali (medicina dei viaggi)', 30], ['Vaccinazione per viaggiatori (febbre gialla solo nei centri vaccinali autorizzati)', 20],
         ['Vaccinazione', 15], ['Visita di prevenzione oncologica', 40],
     ],
     'Logopedia': [
         ['Valutazione logopedica', 60], ['Seduta di logopedia', 45],
-        ['Valutazione dei disturbi specifici dell\'apprendimento (DSA)', 60], ['Terapia della deglutizione', 45],
+        ['Valutazione dei disturbi specifici dell\'apprendimento (DSA; certificazione solo da strutture o équipe autorizzate)', 60], ['Terapia della deglutizione', 45],
         ['Rieducazione della voce', 45], ['Valutazione del linguaggio in età evolutiva', 60],
     ],
     'Malattie dell’apparato cardiovascolare': [
@@ -192,7 +192,7 @@ window.CATALOGO_PRESTAZIONI = {
     ],
     'Malattie Infettive e Tropicali': [
         ['Prima visita infettivologica', 30], ['Visita infettivologica di controllo', 20],
-        ['Consulenza per viaggi internazionali (medicina dei viaggi)', 30], ['Vaccinazione per viaggiatori', 20],
+        ['Consulenza per viaggi internazionali (medicina dei viaggi)', 30], ['Vaccinazione per viaggiatori (febbre gialla solo nei centri vaccinali autorizzati)', 20],
         ['Consulenza per malattie sessualmente trasmesse', 30], ['Test rapido HIV', 20],
         ['Consulenza su esami sierologici', 20],
     ],
@@ -207,12 +207,12 @@ window.CATALOGO_PRESTAZIONI = {
         ['Visita per cambio mansione', 20], ['Visita al rientro dopo malattia', 20],
         ['Spirometria', 20], ['Esame audiometrico', 20],
         ['Visiotest (ergovision)', 15], ['Elettrocardiogramma (ECG)', 15],
-        ['Test per alcol e sostanze stupefacenti', 20], ['Visita per certificato medico aeronautico di classe 1', 60],
-        ['Visita per certificato medico aeronautico di classe 2', 45], ['Visita per certificato LAPL', 40],
-        ['Visita per pilota di droni', 30], ['Rinnovo del certificato medico aeronautico', 40],
+        ['Test per alcol e sostanze stupefacenti', 20], ['Visita per certificato medico aeronautico di classe 1 (solo esaminatori AME ENAC; prima visita solo in centro AeMC)', 60],
+        ['Visita per certificato medico aeronautico di classe 2 (solo esaminatori AME autorizzati dall\'ENAC)', 45], ['Visita per certificato LAPL (solo esaminatori AME autorizzati dall\'ENAC)', 40],
+        ['Rinnovo del certificato medico aeronautico (solo esaminatori AME autorizzati dall\'ENAC)', 40],
     ],
     'Medicina dello sport e dell’esercizio fisico': [
-        ['Visita per idoneità sportiva non agonistica', 30], ['Visita per idoneità sportiva agonistica', 45],
+        ['Visita per idoneità sportiva non agonistica', 30], ['Visita per idoneità sportiva agonistica (solo specialisti in medicina dello sport in strutture autorizzate)', 45],
         ['Visita medico sportiva con ECG sotto sforzo', 60], ['Elettrocardiogramma (ECG)', 15],
         ['Test da sforzo (ECG da sforzo)', 45], ['Spirometria', 20],
         ['Valutazione funzionale (test del lattato)', 60], ['Visita per infortunio sportivo', 30],
@@ -244,7 +244,7 @@ window.CATALOGO_PRESTAZIONI = {
         ['Visita medico-legale', 45], ['Perizia medico-legale', 60],
         ['Valutazione del danno da infortunio o incidente stradale', 60], ['Consulenza per invalidità civile', 45],
         ['Certificato medico-legale', 30], ['Consulenza tecnica di parte (CTP)', 60],
-        ['Visita per rinnovo della patente di guida', 20], ['Certificato per porto d\'armi', 20],
+        ['Visita per rinnovo della patente di guida (solo medici abilitati ex art. 119 del Codice della strada)', 20], ['Certificato per porto d\'armi (solo medici legali ASL, militari, della Polizia di Stato o dei Vigili del Fuoco)', 20],
     ],
     'Medicina nucleare': [
         ['Visita di medicina nucleare', 30], ['Scintigrafia tiroidea', 60],
@@ -279,14 +279,14 @@ window.CATALOGO_PRESTAZIONI = {
         ['Valutazione dei disturbi della memoria', 45], ['Visita per cefalea', 40],
         ['Trattamento dell\'emicrania con tossina botulinica', 30], ['Colloquio neuropsicologico', 60],
         ['Valutazione neuropsicologica completa', 120], ['Test di screening cognitivo', 45],
-        ['Riabilitazione cognitiva', 45], ['Valutazione dei disturbi specifici dell\'apprendimento (DSA)', 90],
+        ['Riabilitazione cognitiva', 45], ['Valutazione dei disturbi specifici dell\'apprendimento (DSA; certificazione solo da strutture o équipe autorizzate)', 90],
         ['Valutazione per ADHD dell\'adulto', 90],
     ],
     'Neuropsichiatria infantile': [
         ['Prima visita neuropsichiatrica infantile', 60], ['Visita neuropsichiatrica infantile di controllo', 30],
-        ['Valutazione dei disturbi specifici dell\'apprendimento (DSA)', 90], ['Valutazione per ADHD', 90],
+        ['Valutazione dei disturbi specifici dell\'apprendimento (DSA; certificazione solo da strutture o équipe autorizzate)', 90], ['Valutazione per ADHD', 90],
         ['Valutazione per disturbi dello spettro autistico', 90], ['Valutazione dello sviluppo psicomotorio', 60],
-        ['Elettroencefalogramma (EEG) pediatrico', 45], ['Certificazione per la scuola', 30],
+        ['Elettroencefalogramma (EEG) pediatrico', 45], ['Certificazione per la scuola (DSA solo da strutture o équipe autorizzate)', 30],
     ],
     'Odontoiatria': [
         ['Prima visita odontoiatrica', 30], ['Visita odontoiatrica di controllo', 20],
@@ -325,7 +325,7 @@ window.CATALOGO_PRESTAZIONI = {
     'Ortopedia e traumatologia': [
         ['Prima visita ortopedica', 30], ['Visita ortopedica di controllo', 20],
         ['Infiltrazione articolare', 20], ['Infiltrazione con acido ialuronico', 20],
-        ['Infiltrazione con PRP (plasma ricco di piastrine)', 30], ['Ecografia muscolo-tendinea', 30],
+        ['Infiltrazione con PRP (plasma ricco di piastrine; solo con convenzione con il Servizio Trasfusionale)', 30], ['Ecografia muscolo-tendinea', 30],
         ['Ecografia articolare', 30], ['Onde d\'urto', 20],
         ['Confezionamento di gesso o tutore', 30], ['Visita ortopedica pediatrica', 30],
         ['Valutazione posturale e del piede', 30], ['Artrocentesi', 20],
