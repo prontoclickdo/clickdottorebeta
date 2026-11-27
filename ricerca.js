@@ -1,5 +1,5 @@
 // Click Dottore - ricerca dei medici prenotabili online (pagina principale)
-import { supabase, esc, euro } from './app.js';
+import { supabase, esc, euro } from './app.js?v=6';
 
 function pulisci(valore) {
     // caratteri che hanno un significato speciale nei filtri diventano "qualsiasi testo"

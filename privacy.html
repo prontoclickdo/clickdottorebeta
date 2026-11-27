@@ -12,15 +12,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="icona-32.png">
     <link rel="icon" type="image/png" sizes="192x192" href="icona-192.png">
     <link rel="apple-touch-icon" sizes="180x180" href="icona-apple-180.png">
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=7">
     <link rel="stylesheet" href="vendor/inter/inter.css?v=1">
-    <script>
-        tailwind.config = { theme: { extend: {
-            fontFamily: { sans: ['Inter', 'sans-serif'] },
-            colors: { skybrand: { 50: '#eff5fc', 100: '#dce8f8', 200: '#b9d1f0', 300: '#8db3e5', 400: '#5a8fd6', 500: '#2a71c8', 600: '#31579c', 700: '#284780', 800: '#213a66', 900: '#0f172a' } }
-        } } };
-    </script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
         html { -webkit-text-size-adjust: 100%; }
@@ -29,6 +22,7 @@
         @media print { header, footer, .no-print { display: none !important; } body { background: #fff; } }
     </style>
     <style>html { scroll-behavior: smooth; } section[id] { scroll-margin-top: 1.5rem; }</style>
+    <link rel="stylesheet" href="vendor/tailwind/tailwind.css?v=1">
 </head>
 <body class="min-h-screen flex flex-col">
     <header class="bg-white border-b border-slate-200">
@@ -85,7 +79,7 @@
             </section>
             <section id="trasferimenti" class="space-y-3">
                 <h2 class="text-lg font-bold text-slate-900">5. Trasferimenti fuori dall'Unione europea</h2>
-                <p>Alcuni fornitori (Supabase, Resend, GitHub e i servizi che distribuiscono alcune librerie del sito: Tailwind CSS e jsDelivr) sono società con sede negli Stati Uniti o fanno parte di gruppi statunitensi, e possono accedere ai dati dall'estero. In questi casi il trasferimento avviene sulla base della decisione di adeguatezza della Commissione europea per le società aderenti all'EU-U.S. Data Privacy Framework oppure delle clausole contrattuali tipo approvate dalla Commissione (art. 46 GDPR). Puoi chiederci copia delle garanzie adottate.</p>
+                <p>Caratteri, icone, grafica e librerie del sito sono ospitati direttamente sul sito, insieme alle pagine: per mostrarli non contattiamo servizi esterni di distribuzione. Alcuni fornitori (Supabase, Resend e GitHub, che pubblica il sito) sono società con sede negli Stati Uniti o fanno parte di gruppi statunitensi, e possono accedere ai dati dall'estero. Restano esterni anche i servizi descritti al punto 10 (OpenStreetMap per la mappa e la ricerca dei luoghi, Google Maps per il pulsante &quot;Indicazioni stradali&quot;) e Stripe per i pagamenti con carta. In questi casi il trasferimento avviene sulla base della decisione di adeguatezza della Commissione europea per le società aderenti all'EU-U.S. Data Privacy Framework oppure delle clausole contrattuali tipo approvate dalla Commissione (art. 46 GDPR). Puoi chiederci copia delle garanzie adottate.</p>
             </section>
             <section id="conservazione" class="space-y-3">
                 <h2 class="text-lg font-bold text-slate-900">6. Per quanto tempo conserviamo i dati</h2>
@@ -125,8 +119,9 @@
                 <p>Il sito usa solo strumenti tecnici necessari al suo funzionamento, che non richiedono il consenso:</p>
                 <ul class="list-disc pl-5 space-y-1.5">
                     <li>la memoria del browser (localStorage) per mantenere l'accesso al tuo account e per ricordare le tue scelte sui cookie (per 6 mesi);</li>
-                    <li>caratteri e icone sono ospitati direttamente sul sito; alcune librerie sono invece caricate da servizi esterni (Tailwind CSS per la grafica, jsDelivr per le librerie della mappa, dell'accesso all'account e del codice QR): per fornirle questi servizi ricevono l'indirizzo IP del tuo dispositivo;</li>
-                    <li>nella pagina della mappa degli hub e nella scelta dell'hub durante la prenotazione, le immagini della mappa e la ricerca dei luoghi sono fornite da OpenStreetMap (OpenStreetMap Foundation), che riceve l'indirizzo IP del tuo dispositivo e il nome del luogo cercato; l'elenco dei comuni è scaricato da jsDelivr, che riceve l'indirizzo IP del tuo dispositivo. Il pulsante "Indicazioni stradali" apre Google Maps, che tratta i dati secondo la propria informativa.</li>
+                    <li>caratteri, icone, grafica, l'elenco dei comuni e le librerie della mappa, dell'accesso all'account e del codice QR sono ospitati direttamente sul sito: per caricarli il tuo browser non contatta servizi esterni;</li>
+                    <li>nella pagina della mappa degli hub e nella scelta dell'hub durante la prenotazione, le immagini della mappa e la ricerca dei luoghi sono fornite da OpenStreetMap (OpenStreetMap Foundation), che riceve l'indirizzo IP del tuo dispositivo e il nome del luogo cercato. Il pulsante "Indicazioni stradali" apre Google Maps, che tratta i dati secondo la propria informativa.</li>
+                    <li>gli unici altri servizi esterni con cui il sito comunica sono quelli necessari al servizio: Supabase (accesso all'account e dati delle prenotazioni), Stripe (pagamenti con carta) e Resend (invio delle email di servizio, dal nostro server).</li>
                 </ul>
                 <p>Non usiamo cookie di profilazione o di pubblicità né strumenti statistici di terze parti. Se in futuro li introdurremo, saranno attivati solo con il tuo consenso, che puoi gestire in qualsiasi momento dal link <a href="#" data-cookie-settings class="text-skybrand-600 underline">Preferenze cookie</a>.</p>
             </section>

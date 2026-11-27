@@ -1,0 +1,17 @@
+{
+  "name": "clickdottore",
+  "private": true,
+  "description": "Strumenti per ricompilare il CSS e le librerie ospitate in vendor/",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i tailwind.input.css -o vendor/tailwind/tailwind.css --minify",
+    "build:supabase": "esbuild vendor-src/supabase.js --bundle --format=esm --minify --target=es2020 --legal-comments=eof --outfile=vendor/supabase/supabase.js",
+    "build": "npm run build:css && npm run build:supabase"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "2.119.2",
+    "esbuild": "0.28.2",
+    "leaflet": "1.9.4",
+    "qrcode-generator": "1.4.4",
+    "tailwindcss": "3.4.19"
+  }
+}

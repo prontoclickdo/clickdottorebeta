@@ -1,5 +1,5 @@
 // Click Dottore - funzioni comuni alle pagine di prenotazione e all'area riservata
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+import { createClient } from './vendor/supabase/supabase.js?v=2.119.2';
 
 export const SUPABASE_URL = 'https://awxrrjwzlqghkmsqgkpw.supabase.co';
 // Chiave pubblica (publishable): pensata per stare nel browser, i dati sono protetti dalle regole del database

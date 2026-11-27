@@ -12,15 +12,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="icona-32.png">
     <link rel="icon" type="image/png" sizes="192x192" href="icona-192.png">
     <link rel="apple-touch-icon" sizes="180x180" href="icona-apple-180.png">
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=7">
     <link rel="stylesheet" href="vendor/inter/inter.css?v=1">
-    <script>
-        tailwind.config = { theme: { extend: {
-            fontFamily: { sans: ['Inter', 'sans-serif'] },
-            colors: { skybrand: { 50: '#eff5fc', 100: '#dce8f8', 200: '#b9d1f0', 300: '#8db3e5', 400: '#5a8fd6', 500: '#2a71c8', 600: '#31579c', 700: '#284780', 800: '#213a66', 900: '#0f172a' } }
-        } } };
-    </script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
         html { -webkit-text-size-adjust: 100%; }
@@ -29,6 +22,7 @@
         @media print { header, footer, .no-print { display: none !important; } body { background: #fff; } }
     </style>
     <style>html { scroll-behavior: smooth; } section[id] { scroll-margin-top: 1.5rem; }</style>
+    <link rel="stylesheet" href="vendor/tailwind/tailwind.css?v=1">
 </head>
 <body class="min-h-screen flex flex-col">
     <header class="bg-white border-b border-slate-200">

@@ -2,7 +2,7 @@
 import {
     supabase, api, esc, euro, dataOra, data, quando, durata, ticketPercento, ticketDi, percentoTesto, badgeStato,
     htmlCampiPaziente, leggiPaziente, erroriPaziente, messaggio, classeCampo, slotLiberi, selettoreSlot, seguiCambioUtente,
-} from './app.js?v=5';
+} from './app.js?v=6';
 
 const $ = (id) => document.getElementById(id);
 const RUOLI = { admin: 'Amministratore', operatore: 'Hub', medico: 'Medico', medico_hub: 'Medico e hub' };
