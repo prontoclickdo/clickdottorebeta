@@ -108,7 +108,7 @@ async function cercaMedici(specialita, luogo) {
                 <ul class="text-xs text-slate-600 space-y-1.5">${pr.slice(0, 4).map((p) => `
                     <li class="flex items-baseline justify-between gap-3"><span class="min-w-0 ${cercata(p) ? 'font-semibold text-skybrand-700' : ''}"><i class="fa-solid fa-check text-skybrand-500 mr-1.5"></i>${esc(p.nome)}</span>${p.prezzo_visita_cents != null ? `<span class="shrink-0 font-semibold text-slate-900">${euro(p.prezzo_visita_cents)}</span>` : ''}</li>`).join('')}
                     </ul>
-                <a href="prenota.html?medico=${encodeURIComponent(m.id)}" class="text-xs font-semibold text-skybrand-600 hover:text-skybrand-700">${pr.length > 4 ? `Vedi tutte le ${pr.length} prestazioni e i prezzi` : 'Vedi prestazioni e prezzi'} <i class="fa-solid fa-arrow-right ml-0.5"></i></a>
+                <a href="prenota.html?medico=${encodeURIComponent(m.id)}" class="inline-flex items-center gap-2 text-base font-semibold text-skybrand-600 hover:text-skybrand-700">${pr.length > 4 ? `Vedi tutte le ${pr.length} prestazioni e i prezzi` : 'Vedi prestazioni e prezzi'} <i class="fa-solid fa-arrow-right text-base"></i></a>
                 ${minimo != null ? `<p class="text-xs text-slate-500">Prestazioni a partire da <strong class="text-slate-900">${euro(minimo)}</strong></p>` : ''}
                 <a href="prenota.html?medico=${encodeURIComponent(m.id)}" class="mt-auto text-center px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition">Prenota online</a>
             </article>`;
