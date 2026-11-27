@@ -13,8 +13,8 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icona-192.png">
     <link rel="apple-touch-icon" sizes="180x180" href="icona-apple-180.png">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=7">
+    <link rel="stylesheet" href="vendor/inter/inter.css?v=1">
     <script>
         tailwind.config = { theme: { extend: {
             fontFamily: { sans: ['Inter', 'sans-serif'] },
@@ -100,7 +100,9 @@
         if (s.session) location.replace(/^prenota\.html\?/.test(torna) ? torna : 'area-paziente.html');
 
         const f = $('form-registrati');
-        f.data_nascita.max = new Date().toISOString().slice(0, 10);
+        // solo maggiorenni: data di nascita fino a 18 anni fa
+        const diciottoAnniFa = new Date(); diciottoAnniFa.setFullYear(diciottoAnniFa.getFullYear() - 18);
+        f.data_nascita.max = diciottoAnniFa.toISOString().slice(0, 10);
 
         f.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -112,6 +114,7 @@
                 consenso_privacy: f.consenso_privacy.checked, sito: f.sito.value,
             };
             const errori = erroriPaziente(dati);
+            if (dati.data_nascita && dati.data_nascita > f.data_nascita.max) errori.push("L'account può essere creato solo da persone maggiorenni: per un minore prenota dall'account di chi ne ha la responsabilità genitoriale");
             if (!dati.consenso_privacy) errori.push("Per registrarti devi accettare l'informativa privacy e i termini");
             $('msg').hidden = false;
             if (errori.length) return messaggio($('msg'), errori);

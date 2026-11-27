@@ -14,8 +14,8 @@
     <link rel="apple-touch-icon" sizes="180x180" href="icona-apple-180.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=7">
+    <link rel="stylesheet" href="vendor/inter/inter.css?v=1">
     <script>
         tailwind.config = { theme: { extend: {
             fontFamily: { sans: ['Inter', 'sans-serif'] },
@@ -99,7 +99,7 @@
                 riga('Medico', `${b.medico?.genere === 'F' ? 'Dott.ssa' : b.medico?.genere === 'A' && b.medico?.titolo ? b.medico.titolo : 'Dott.'} ${b.medico.nome} ${b.medico.cognome} · ${b.medico.specializzazione}`),
                 riga('Data e ora', quando(b.visita_il)),
                 b.hub ? riga('Prenotata presso', b.hub) : '',
-                riga('Beneficiario', 'Click Dottore'),
+                riga('Beneficiario', b.hub || 'Hub che gestisce la prenotazione'),
             ].join('');
             const stato = $('stato');
             if (b.pagata) {

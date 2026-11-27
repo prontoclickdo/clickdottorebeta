@@ -318,7 +318,7 @@ function apriPannello(id) {
         : `${euro(p.quota_cents)} da pagare`;
     const gestisce = comeMedico || comeHub;
     const visitaPassata = p.visita_il && new Date(p.visita_il).getTime() < Date.now();
-    const conRimborso = p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= 48 * 3600 * 1000;
+    const conRimborso = p.spostata_dalla_struttura || (p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= 48 * 3600 * 1000);
 
     $('pannello-corpo').innerHTML = `
         <div class="flex items-start justify-between gap-3">
@@ -380,7 +380,7 @@ function apriPannello(id) {
                     <div class="text-sm font-semibold text-red-700">Annulla la prenotazione</div>
                     <select data-causa class="${classeCampo}">
                         <option value="struttura">${comeMedico && !comeHub ? 'Non posso effettuare la visita' : 'Il medico o la struttura non possono effettuare la visita'} (quota rimborsata)</option>
-                        <option value="paziente">Ripensamento del paziente (${conRimborso ? 'quota rimborsata: mancano almeno 48 ore' : 'quota NON rimborsabile: mancano meno di 48 ore'})</option>
+                        <option value="paziente">Ripensamento del paziente (${p.spostata_dalla_struttura ? 'quota rimborsata: la visita era stata spostata da medico o hub' : conRimborso ? 'quota rimborsata: mancano almeno 48 ore' : 'quota NON rimborsabile: mancano meno di 48 ore'})</option>
                     </select>
                     <textarea data-motivo rows="2" maxlength="500" placeholder="Motivo (viene comunicato al paziente)" class="${classeCampo}"></textarea>
                     <button type="button" data-azione="annulla" class="${btnPericolo} w-full">Annulla la prenotazione</button>

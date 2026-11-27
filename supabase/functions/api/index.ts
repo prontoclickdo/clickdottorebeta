@@ -113,6 +113,14 @@ type Paziente = {
   telefono: string; email: string;
 };
 
+// almeno 18 anni compiuti alla data di oggi (ora italiana)
+function maggiorenne(nascita: string): boolean {
+  const [a, m, g] = nascita.split("-").map(Number);
+  const oggi = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Rome" }));
+  const compiuti = oggi.getFullYear() - a - ((oggi.getMonth() + 1 < m || (oggi.getMonth() + 1 === m && oggi.getDate() < g)) ? 1 : 0);
+  return compiuti >= 18;
+}
+
 function validaPaziente(p: Record<string, unknown> | undefined): Paziente {
   if (!p || typeof p !== "object") throw new HttpError(400, "Dati del paziente mancanti");
   const nome = testo(p.nome, "nome", 60);
@@ -421,7 +429,8 @@ const scadenzaRisposta = (inizio: Date) => minimo(new Date(Date.now() + 48 * ORA
 // Politica di rimborso: se il paziente ci ripensa, il ticket si rimborsa solo con almeno 48 ore di preavviso
 const PREAVVISO_RIMBORSO = 48 * ORA;
 // deno-lint-ignore no-explicit-any
-const rimborsabile = (p: any) => !!p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= PREAVVISO_RIMBORSO;
+// rimborso: con almeno 48 ore di preavviso oppure, sempre, se la visita è stata spostata dal medico o dall'hub
+const rimborsabile = (p: any) => !!p.spostata_dalla_struttura || (!!p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= PREAVVISO_RIMBORSO);
 const TESTO_POLITICA = "Puoi annullare dalla tua area personale: il ticket viene rimborsato solo se annulli almeno 48 ore prima della visita, altrimenti non è rimborsabile.";
 
 // ---------------------------------------------------------------------
@@ -491,8 +500,8 @@ async function avvisaSpostamento(p: Pren, vecchia: string, opzioni: { medico: bo
     al <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
     ${boxCodice(p.codice, p.codice_richiesta)}
     ${tabellaVisita(p, righe)}
-    <p>Se il nuovo orario non ti va bene puoi annullare dalla tua area personale${p.canale === "hub" ? ` o rivolgendoti a ${esc(p.hub?.nome ?? "la struttura")}` : ""}.</p>
-    <p style="color:#64748b;font-size:13px">${esc(TESTO_POLITICA)}</p>
+    <p>Se il nuovo orario non ti va bene puoi annullare dalla tua area personale${p.canale === "hub" ? ` o rivolgendoti a ${esc(p.hub?.nome ?? "la struttura")}` : ""}:
+    poiché lo spostamento non dipende da te, <strong>il ticket eventualmente pagato ti viene rimborsato per intero</strong>, qualunque sia il preavviso.</p>
     ${p.canale === "online" ? pulsanteEmail(`${SITE}/area-paziente.html`, "Vai alla tua area") : ""}`));
   const avviso = layoutEmail("Visita spostata", `
     <p>La ${p.stato === "richiesta" ? "richiesta" : "visita"} per <strong>${esc(p.prestazione.nome)}</strong> con ${esc(nomeMedico(p))}
@@ -535,8 +544,8 @@ async function avvisaRifiuto(p: Pren) {
       ${pulsanteEmail(`${SITE}/`, "Cerca un altro orario")}`));
   } else if (p.hub?.email) {
     await inviaEmail(p.hub.email, `Richiesta rifiutata ${p.codice}`, layoutEmail("Richiesta rifiutata dal medico", `
-      <p>${esc(nomeMedico(p))} ha rifiutato la richiesta per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))}
-      (paziente ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)}).</p>${boxCodice(p.codice, p.codice_richiesta)}${motivo}
+      <p>${esc(nomeMedico(p))} ha rifiutato la richiesta per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))}.
+      I dati del paziente sono nella tua area riservata.</p>${boxCodice(p.codice, p.codice_richiesta)}${motivo}
       ${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`));
   }
 }
@@ -551,6 +560,7 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
     ${boxCodice(p.codice, p.codice_richiesta)}
     ${tabellaVisita(p, quota)}
     <p>Conserva il codice: ti servirà per qualsiasi comunicazione. Se non puoi presentarti, avvisa il prima possibile.</p>
+    ${p.recesso_rinuncia_il ? `<p style="color:#64748b;font-size:13px">Prima del pagamento hai chiesto l'esecuzione immediata del servizio di prenotazione e hai preso atto che, con la conferma, il servizio è interamente prestato e il diritto di recesso non è più esercitabile (art. 59, comma 1, lettera a, del Codice del consumo). Restano valide le regole di annullamento e rimborso.</p>` : ""}
     <p style="color:#64748b;font-size:13px">${p.canale === "online" ? esc(TESTO_POLITICA) : `Il ticket viene rimborsato solo se annulli almeno 48 ore prima della visita, rivolgendoti a ${esc(p.hub?.nome ?? "la struttura")}; altrimenti non è rimborsabile.`}</p>`));
   if (opzioni.medico) {
     await inviaEmail(p.medico.email, `Visita confermata ${p.codice}: ${dataOra(p.visita_il)}`, layoutEmail("Visita confermata", `
@@ -565,8 +575,8 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
   }
   if (opzioni.hub && p.hub?.email) {
     await inviaEmail(p.hub.email, `Il medico ha confermato ${p.codice}`, layoutEmail("Visita confermata dal medico", `
-      <p>${esc(nomeMedico(p))} ha confermato la visita di ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)}
-      per <strong>${esc(p.prestazione.nome)}</strong> il <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
+      <p>${esc(nomeMedico(p))} ha confermato la visita per <strong>${esc(p.prestazione.nome)}</strong>
+      il <strong>${esc(dataOra(p.visita_il))}</strong>. I dati del paziente sono nella tua area riservata.</p>
       ${boxCodice(p.codice, p.codice_richiesta)}
       <p>Dall'area riservata puoi registrare l'incasso della quota o stampare il bollettino da pagare online.</p>
       ${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`));
@@ -656,7 +666,7 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
         ${boxCodice(p.codice, p.codice_richiesta)}${tabellaVisita(p)}`));
       if (p.hub?.email) {
         await inviaEmail(p.hub.email, `Bollettino pagato ${p.codice}`, layoutEmail("Bollettino pagato online", `
-          <p>Il paziente ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)} ha pagato online la quota di ${euro(p.quota_cents)}.</p>
+          <p>Il paziente ha pagato online la quota di ${euro(p.quota_cents)} per la visita con ${esc(nomeMedico(p))} del ${esc(dataOra(p.visita_il))}. I suoi dati sono nella tua area riservata.</p>
           ${boxCodice(p.codice, p.codice_richiesta)}<p>L'importo è stato accreditato sul tuo conto Stripe.</p>`));
       }
     }
@@ -796,6 +806,9 @@ async function paga(req: Request) {
   if (p.pagata_il) throw new HttpError(409, "La quota è già stata pagata");
   if (p.stato === "scaduta") throw new HttpError(409, "Il tempo per pagare è scaduto e l'orario è tornato libero: invia una nuova richiesta");
   if (p.stato !== "da_pagare") throw new HttpError(409, "Questa prenotazione non è in attesa di pagamento");
+  // contratto a distanza: prima di pagare il paziente chiede l'esecuzione immediata e prende atto della perdita del recesso (art. 59, c. 1, lett. a, Codice del consumo)
+  if (body.rinuncia_recesso !== true) throw new HttpError(400, "Per pagare conferma la richiesta di esecuzione immediata del servizio di prenotazione");
+  await db.from("prenotazioni").update({ recesso_rinuncia_il: new Date().toISOString() }).eq("id", id);
   if (!p.hub_id) {
     // richieste inviate prima dell'introduzione degli hub di riferimento: si assegnano ora
     const hub = await hubDiRiferimento(p.medico_id);
@@ -1013,7 +1026,8 @@ async function aggiornaPrenotazione(req: Request) {
       if (!["richiesta", "da_pagare", "confermata"].includes(p.stato)) throw new HttpError(409, "Si possono spostare solo le prenotazioni attive");
       if (p.visita_il && new Date(p.visita_il).getTime() < Date.now()) throw new HttpError(409, "La visita è già passata");
       const slot = await verificaSlot(p.prestazione_id, body.inizio);
-      const campi: Record<string, unknown> = { visita_il: slot.inizio.toISOString(), visita_fine: slot.fine.toISOString() };
+      // spostata dal medico o dall'hub: se il paziente non accetta il nuovo orario e annulla, il ticket gli è rimborsato per intero
+      const campi: Record<string, unknown> = { visita_il: slot.inizio.toISOString(), visita_fine: slot.fine.toISOString(), spostata_dalla_struttura: true };
       if (p.stato === "richiesta" && p.scadenza) campi.scadenza = minimo(new Date(p.scadenza), new Date(slot.inizio.getTime() - ORA)).toISOString();
       if (p.stato === "da_pagare" && p.scadenza) campi.scadenza = minimo(new Date(p.scadenza), slot.inizio).toISOString();
       const { data, error } = await db.from("prenotazioni").update({ ...campi, aggiornata_il: ora }).eq("id", id).select("*").single();
@@ -1460,6 +1474,9 @@ async function registrati(req: Request) {
   const body = await req.json().catch(() => ({}));
   if (body.sito) throw new HttpError(400, "Richiesta non valida");   // campo trappola anti-bot
   const dati = validaPaziente(body);
+  if (!maggiorenne(dati.data_nascita)) {
+    throw new HttpError(400, "L'account può essere creato solo da persone maggiorenni: per un minore prenota dall'account di chi ne ha la responsabilità genitoriale");
+  }
   if (body.consenso_privacy !== true) throw new HttpError(400, "Serve l'accettazione dell'informativa privacy e dei termini");
   const email = dati.email;
   const rispostaNeutra = json(req, { ok: true });   // non rivela se l'email è già registrata

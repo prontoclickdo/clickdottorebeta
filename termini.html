@@ -13,8 +13,8 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icona-192.png">
     <link rel="apple-touch-icon" sizes="180x180" href="icona-apple-180.png">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=7">
+    <link rel="stylesheet" href="vendor/inter/inter.css?v=1">
     <script>
         tailwind.config = { theme: { extend: {
             fontFamily: { sans: ['Inter', 'sans-serif'] },
@@ -58,6 +58,8 @@
                 <h2 class="text-lg font-bold text-slate-900">2. Che cosa fa Click Dottore</h2>
                 <p>Click Dottore è una piattaforma che mette in contatto i pazienti con medici e strutture sanitarie e permette di prenotare le loro prestazioni. Click Dottore <strong>non eroga prestazioni sanitarie</strong>: le visite sono svolte dai medici in piena autonomia professionale e sotto la loro esclusiva responsabilità.</p>
                 <p>Le informazioni pubblicate su medici, prestazioni, orari e tariffe sono inserite dai medici e dalle strutture, che ne rispondono.</p>
+                <p><strong>Chi fa cosa.</strong> Click Dottore gestisce la piattaforma e ne stabilisce le regole (comprese quelle di questi termini su ticket, annullamenti e rimborsi). La <strong>prestazione sanitaria</strong> è un rapporto tra te e il medico, che ne stabilisce la tariffa e la incassa. Il <strong>servizio di prenotazione</strong>, per cui si paga il ticket, è svolto dall'hub che gestisce la tua prenotazione (punto 5): l'hub incassa il ticket, ne emette la ricevuta e ne cura l'eventuale rimborso secondo le regole dei punti 7 e 8. Medici e hub sono professionisti e operano con la propria partita IVA.</p>
+                <p><strong>Come sono mostrati i risultati della ricerca.</strong> Compaiono i medici la cui specializzazione, nome o prestazione corrisponde a quanto cerchi, eventualmente filtrati per comune o CAP, <strong>in ordine alfabetico per cognome</strong>. Nessun medico può pagare per comparire più in alto. Sono visibili solo i medici e gli hub con un <strong>abbonamento attivo</strong> a Click Dottore; se l'abbonamento non risulta pagato il profilo resta visibile per 15 giorni come "non disponibile per prenotazioni" e poi non compare più.</p>
                 <p><strong>Il servizio non è adatto alle urgenze.</strong> In caso di emergenza chiama il <strong>112</strong> o rivolgiti al pronto soccorso più vicino.</p>
             </section>
             <section id="account" class="space-y-3">
@@ -69,10 +71,10 @@
                 <h2 class="text-lg font-bold text-slate-900">4. Come funziona la prenotazione online</h2>
                 <ul class="list-disc pl-5 space-y-1.5">
                     <li><strong>Richiesta.</strong> Scegli il medico, la prestazione e un orario tra quelli liberi e invii la richiesta. In questa fase non paghi nulla.</li>
-                    <li><strong>Conferma entro 48 ore.</strong> La richiesta viene gestita dal medico e dall'hub di riferimento della sua zona (vedi punto 5), che devono confermarla o rifiutarla entro 48 ore dal suo ricevimento (e comunque prima della visita). Se nessuno risponde entro questo termine la richiesta scade, l'orario torna libero e non ti viene addebitato nulla.</li>
-                    <li><strong>Spostamento della data.</strong> Il medico o l'hub di riferimento possono proporre un orario diverso spostando la richiesta o la visita: ricevi un'email con il nuovo orario e, se non ti va bene, puoi annullare secondo le regole del punto 7.</li>
-                    <li><strong>Pagamento del ticket entro 24 ore.</strong> Se la richiesta viene confermata, ricevi un'email e hai 24 ore (e comunque fino all'orario della visita) per pagare il ticket di prenotazione con carta dalla tua area personale oppure di persona (in contanti o con carta) presso l'hub di riferimento, che registra il pagamento. Se non paghi entro questo termine la richiesta scade e l'orario torna disponibile per altri pazienti.</li>
-                    <li><strong>Prenotazione confermata.</strong> A pagamento avvenuto la visita è confermata: ricevi un'email con il codice di prenotazione, la data, l'ora e l'indirizzo dello studio.</li>
+                    <li><strong>Conferma entro 48 ore.</strong> La richiesta viene gestita dal medico e dall'hub che hai scelto per la prenotazione (vedi punto 5), che devono confermarla o rifiutarla entro 48 ore dal suo ricevimento (e comunque prima della visita). Se nessuno risponde entro questo termine la richiesta scade, l'orario torna libero e non ti viene addebitato nulla.</li>
+                    <li><strong>Spostamento della data.</strong> Il medico o l'hub possono proporre un orario diverso spostando la richiesta o la visita: ricevi un'email con il nuovo orario. Se non ti va bene puoi annullare e, poiché lo spostamento non dipende da te, <strong>il ticket eventualmente pagato ti viene rimborsato per intero</strong>, qualunque sia il preavviso.</li>
+                    <li><strong>Pagamento del ticket entro 24 ore.</strong> Se la richiesta viene confermata, ricevi un'email e hai 24 ore (e comunque fino all'orario della visita) per pagare il ticket di prenotazione con carta dalla tua area personale (prima del pagamento ti chiediamo di confermare la richiesta di esecuzione immediata del servizio, vedi punto 9) oppure di persona presso l'hub (in contanti, con carta o con bonifico istantaneo), che registra il pagamento. Se non paghi entro questo termine la richiesta scade e l'orario torna disponibile per altri pazienti.</li>
+                    <li><strong>Prenotazione confermata.</strong> A pagamento avvenuto la visita è confermata: ricevi un'email con il codice definitivo della prenotazione (che sostituisce quello provvisorio della richiesta), la data, l'ora e l'indirizzo dello studio.</li>
                 </ul>
                 <p>Il medico o l'hub possono rifiutare una richiesta, ad esempio se la prestazione non è adatta al tuo caso: in questo caso non paghi nulla.</p>
             </section>
@@ -98,6 +100,7 @@
                 </div>
                 <ul class="list-disc pl-5 space-y-1.5">
                     <li>Finché la richiesta è in attesa della conferma del medico o del pagamento della quota puoi ritirarla in qualsiasi momento senza alcun costo.</li>
+                    <li>Se il medico o l'hub hanno spostato la visita e annulli perché il nuovo orario non ti va bene, la quota ti viene <strong>rimborsata per intero</strong>, anche a meno di 48 ore dalla visita.</li>
                     <li>Le prenotazioni online si annullano dalla tua area personale; quelle fatte presso un hub si annullano rivolgendoti all'hub.</li>
                     <li>Il termine di 48 ore si calcola sull'orario di inizio della visita indicato nella conferma. La tua area personale mostra fino a quando puoi annullare con diritto al rimborso.</li>
                     <li>Il rimborso dei ticket pagati online avviene, a cura dell'hub che li ha incassati, sulla stessa carta usata per il pagamento, di norma entro alcuni giorni lavorativi a seconda dei tempi della banca. I ticket pagati allo sportello dell'hub sono rimborsati dall'hub.</li>
@@ -109,11 +112,13 @@
             </section>
             <section id="recesso" class="space-y-3">
                 <h2 class="text-lg font-bold text-slate-900">9. Diritto di recesso</h2>
-                <p>Il servizio di prenotazione si considera interamente prestato quando la prenotazione è confermata. Inviando la richiesta e pagando la quota chiedi espressamente che il servizio sia eseguito subito e prendi atto che, una volta confermata la prenotazione, perdi il diritto di recesso previsto dal Codice del Consumo (art. 59, comma 1, lettera a, d.lgs. 206/2005). Restano in ogni caso valide, a tuo favore, le regole di annullamento e rimborso dei punti 7 e 8.</p>
+                <p>Il servizio di prenotazione si considera interamente prestato quando la prenotazione è confermata. Prima di pagare online ti chiediamo di <strong>spuntare un'apposita casella</strong> con cui chiedi espressamente che il servizio sia eseguito subito e prendi atto che, una volta confermata la prenotazione, perdi il diritto di recesso previsto dal Codice del Consumo (art. 59, comma 1, lettera a, d.lgs. 206/2005); la tua scelta è riportata nell'email di conferma. Restano in ogni caso valide, a tuo favore, le regole di annullamento e rimborso dei punti 7 e 8.</p>
+                <p>Le prenotazioni fatte di persona presso un hub non sono contratti a distanza: per esse valgono le regole di annullamento e rimborso dei punti 7 e 8.</p>
             </section>
             <section id="obblighi" class="space-y-3">
                 <h2 class="text-lg font-bold text-slate-900">10. Comportamenti non consentiti</h2>
-                <p>Non è consentito usare il servizio per prenotazioni false o di disturbo, inserire dati di altre persone senza il loro consenso, bloccare orari senza l'intenzione di presentarsi o tentare di aggirare i sistemi di sicurezza del sito. In questi casi possiamo sospendere o chiudere l'account.</p>
+                <p>Non è consentito usare il servizio per prenotazioni false o di disturbo, inserire dati di altre persone senza il loro consenso, bloccare orari senza l'intenzione di presentarsi o tentare di aggirare i sistemi di sicurezza del sito. In questi casi possiamo sospendere o chiudere l'account, comunicandotene il motivo.</p>
+                <p><strong>Segnalare contenuti illeciti.</strong> Se un profilo, una tariffa o un'altra informazione pubblicata ti sembra falsa o illecita (ad esempio un medico che non risulta iscritto all'albo), segnalacelo ai contatti del punto 15 indicando la pagina e il motivo: esaminiamo ogni segnalazione, ti comunichiamo l'esito e, se necessario, rimuoviamo il contenuto o sospendiamo il profilo.</p>
             </section>
             <section id="responsabilita" class="space-y-3">
                 <h2 class="text-lg font-bold text-slate-900">11. Responsabilità</h2>
@@ -135,6 +140,7 @@
             <section id="contatti" class="space-y-3">
                 <h2 class="text-lg font-bold text-slate-900">15. Contatti</h2>
                 <p>Per domande, reclami o richieste di assistenza puoi scriverci a <span class="bg-amber-100 text-amber-900 px-1 rounded">[da completare]</span> indirizzo email del servizio clienti.</p>
+                <p>Lo stesso indirizzo è il <strong>punto di contatto unico</strong> per gli utenti e per le autorità ai sensi del Regolamento (UE) 2022/2065 sui servizi digitali; puoi scriverci in italiano o in inglese.</p>
             </section>
         </article>
     </main>

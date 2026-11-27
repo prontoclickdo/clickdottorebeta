@@ -13,8 +13,8 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icona-192.png">
     <link rel="apple-touch-icon" sizes="180x180" href="icona-apple-180.png">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=7">
+    <link rel="stylesheet" href="vendor/inter/inter.css?v=1">
     <script>
         tailwind.config = { theme: { extend: {
             fontFamily: { sans: ['Inter', 'sans-serif'] },
@@ -126,7 +126,14 @@
             b.disabled = true;
             try {
                 if (b.dataset.paga) {
-                    const { url } = await api('paga', { dati: { id: b.dataset.paga }, conAccesso: true });
+                    const presaAtto = b.closest('article').querySelector('[data-recesso]');
+                    if (presaAtto && !presaAtto.checked) {
+                        b.disabled = false;
+                        box.hidden = false;
+                        messaggio(box, 'Per pagare spunta la casella sotto il pulsante: chiedi l\'esecuzione immediata del servizio di prenotazione.');
+                        return;
+                    }
+                    const { url } = await api('paga', { dati: { id: b.dataset.paga, rinuncia_recesso: true }, conAccesso: true });
                     location.href = url;
                     return;
                 }
@@ -193,7 +200,7 @@
 
         async function caricaPrenotazioni() {
             const { data: righe, error } = await supabase.from('prenotazioni')
-                .select('id, codice, stato, creata_il, visita_il, scadenza, pagata_il, nota_medico, motivo_rifiuto, quota_cents, medico:medici(nome, cognome, genere, titolo, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)')
+                .select('id, codice, stato, creata_il, visita_il, scadenza, pagata_il, spostata_dalla_struttura, nota_medico, motivo_rifiuto, quota_cents, medico:medici(nome, cognome, genere, titolo, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)')
                 .eq('paziente_id', uid)
                 .order('creata_il', { ascending: false });
             const el = $('elenco');
@@ -209,20 +216,24 @@
                 const visita = p.visita_il
                     ? `<p class="mt-3 text-sm ${p.stato === 'confermata' ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : 'text-slate-700 bg-slate-50 border-slate-200'} border rounded-xl px-3.5 py-2.5"><i class="fa-regular fa-calendar${p.stato === 'confermata' ? '-check' : ''} mr-1.5"></i><strong>${esc(quando(p.visita_il))}</strong>${p.stato === 'confermata' ? dove : ''}</p>` : '';
                 const paga = p.stato === 'da_pagare' && !p.pagata_il ? `
-                    <div class="mt-3 rounded-xl border border-skybrand-200 bg-skybrand-50 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="mt-3 rounded-xl border border-skybrand-200 bg-skybrand-50 p-3.5 space-y-3">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <p class="text-sm text-slate-700">Il medico ha confermato. Paga il ticket di prenotazione entro <strong>${esc(quando(p.scadenza))}</strong>, altrimenti l'orario torna libero.<span class="block text-xs text-slate-500 mt-1">Il ticket è incassato dall'hub e sostiene la sua assistenza; la tariffa della visita si paga al medico.</span></p>
                         <button type="button" data-paga="${p.id}" class="shrink-0 px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60"><i class="fa-solid fa-lock mr-1"></i> Paga ${euro(p.quota_cents)}</button>
+                    </div>
+                    <label class="flex items-start gap-2.5 text-xs text-slate-600"><input type="checkbox" data-recesso class="mt-0.5 w-4 h-4 shrink-0">
+                        <span>Chiedo che il servizio di prenotazione sia eseguito subito e prendo atto che, con il pagamento e la conferma della prenotazione, il servizio è interamente prestato e perdo il diritto di recesso (art. 59, comma 1, lettera a, del Codice del consumo). Restano valide le regole di annullamento e rimborso dei <a href="termini.html#rimborsi" target="_blank" class="text-skybrand-600 underline">termini del servizio</a>.</span></label>
                     </div>` : '';
                 const attesa = p.stato === 'richiesta' ? `<p class="mt-2 text-xs text-slate-500">Il medico deve rispondere entro ${esc(quando(p.scadenza))}. Ti avviseremo via email.</p>` : '';
                 const rifiuto = p.motivo_rifiuto ? `<p class="mt-2 text-sm text-slate-600"><span class="text-slate-400">Motivo:</span> ${esc(p.motivo_rifiuto)}</p>` : '';
                 const nota = p.nota_medico ? `<p class="mt-2 text-sm text-slate-600"><span class="text-slate-400">Nota:</span> ${esc(p.nota_medico)}</p>` : '';
                 const futura = p.visita_il && new Date(p.visita_il).getTime() > Date.now();
-                const conRimborso = p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= 48 * 3600 * 1000;
+                const conRimborso = p.spostata_dalla_struttura || (p.visita_il && new Date(p.visita_il).getTime() - Date.now() >= 48 * 3600 * 1000);
                 const annullabile = futura && (['richiesta', 'da_pagare'].includes(p.stato) || p.stato === 'confermata');
                 const annulla = annullabile
                     ? `<button type="button" data-annulla="${p.id}" data-pagata="${p.pagata_il ? '1' : ''}" data-rimborso="${conRimborso ? '1' : ''}" class="mt-3 text-sm text-red-700 hover:text-red-800 font-medium">${p.stato === 'confermata' ? 'Annulla la prenotazione' : 'Annulla la richiesta'}</button>` : '';
                 const politica = p.stato === 'confermata' && p.pagata_il && futura
-                    ? `<p class="mt-2 text-xs text-slate-500">${conRimborso ? `Se annulli entro ${esc(quando(new Date(new Date(p.visita_il).getTime() - 48 * 3600 * 1000).toISOString()))} la quota ti viene rimborsata.` : 'Mancano meno di 48 ore alla visita: in caso di annullamento la quota non è rimborsabile.'}</p>` : '';
+                    ? `<p class="mt-2 text-xs text-slate-500">${p.spostata_dalla_struttura ? 'La visita è stata spostata dal medico o dall\'hub: se il nuovo orario non ti va bene e annulli, la quota ti viene rimborsata per intero.' : conRimborso ? `Se annulli entro ${esc(quando(new Date(new Date(p.visita_il).getTime() - 48 * 3600 * 1000).toISOString()))} la quota ti viene rimborsata.` : 'Mancano meno di 48 ore alla visita: in caso di annullamento la quota non è rimborsabile.'}</p>` : '';
                 return `
                 <article class="bg-white border border-slate-200 rounded-2xl p-5">
                     <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
