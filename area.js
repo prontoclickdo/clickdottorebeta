@@ -1304,8 +1304,8 @@ const STATI_ABBONAMENTO = {
     paused: ['In pausa', 'bg-amber-50 text-amber-700 border-amber-200'],
     nessuno: ['Nessun abbonamento', 'bg-slate-50 text-slate-600 border-slate-200'],
 };
-const badgeAbbonamento = (stato, esente) => {
-    const [testo, classi] = esente ? ['Esente', 'bg-skybrand-50 text-skybrand-700 border-skybrand-200'] : (STATI_ABBONAMENTO[stato] || [stato, 'bg-slate-50 text-slate-600 border-slate-200']);
+const badgeAbbonamento = (stato) => {
+    const [testo, classi] = (STATI_ABBONAMENTO[stato] || [stato, 'bg-slate-50 text-slate-600 border-slate-200']);
     return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${classi}">${esc(testo)}</span>`;
 };
 
@@ -1372,18 +1372,13 @@ function mostraPiani() {
 
 function disegnaAbbonamento() {
     const a = st.abbonamento;
-    if (a.esente) {
-        $('vista').innerHTML = `<div class="${card} max-w-xl space-y-2"><div class="flex items-center gap-2"><h2 class="font-bold text-slate-900">Abbonamento</h2>${badgeAbbonamento(a.stato, true)}</div>
-            <p class="text-sm text-slate-600">Click Dottore ti ha concesso l'accesso all'area riservata senza abbonamento.</p></div>`;
-        return;
-    }
     const fine = a.periodo_fine ? data(a.periodo_fine.slice(0, 10)) : null;
     $('vista').innerHTML = `
         <div class="space-y-5">
             <div class="${card} space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <div class="flex items-center gap-2"><h2 class="font-bold text-slate-900">Piano ${a.piano ? esc(PIANI_INFO[a.piano].nome) : ''}</h2>${badgeAbbonamento(a.stato, false)}</div>
+                        <div class="flex items-center gap-2"><h2 class="font-bold text-slate-900">Piano ${a.piano ? esc(PIANI_INFO[a.piano].nome) : ''}</h2>${badgeAbbonamento(a.stato)}</div>
                         <p class="text-sm text-slate-500 mt-1">${a.disdetta
                             ? `<i class="fa-solid fa-circle-exclamation text-amber-500 mr-1"></i>Disdetto: l'accesso resta attivo fino al ${esc(fine || '')}, poi l'area riservata verrà bloccata.`
                             : fine ? `Prossimo rinnovo il ${esc(fine)}.` : ''}</p>
@@ -1400,11 +1395,9 @@ function disegnaAbbonamento() {
 
 function rigaAbbonamento(tipo, id) {
     const a = st.abbonamenti.find((x) => (tipo === 'hub' ? x.hub_id : x.medico_id) === id);
-    const esente = !!a?.esente;
-    const dettaglio = a && !esente && a.piano ? ` · ${PIANI_INFO[a.piano]?.nome || ''}${a.periodo_fine ? ` · ${a.disdetta_a_fine_periodo ? 'fino al' : 'rinnovo'} ${data(a.periodo_fine.slice(0, 10))}` : ''}` : '';
-    return `<div class="flex flex-wrap items-center justify-between gap-2 text-xs border-t border-slate-100 pt-3">
-        <span class="text-slate-600"><i class="fa-solid fa-id-card mr-1 text-slate-400"></i>Abbonamento: ${badgeAbbonamento(a?.stato || 'nessuno', esente)}<span class="ml-1">${esc(dettaglio)}</span></span>
-        <button type="button" data-esente="${tipo}:${id}:${esente ? '0' : '1'}" class="px-3 py-1.5 rounded-lg font-semibold border ${esente ? 'border-skybrand-200 text-skybrand-700 bg-skybrand-50' : 'border-slate-200 text-slate-600 bg-white hover:border-skybrand-300'}">${esente ? 'Togli esenzione' : 'Rendi esente'}</button>
+    const dettaglio = a?.piano ? ` · ${PIANI_INFO[a.piano]?.nome || ''}${a.periodo_fine ? ` · ${a.disdetta_a_fine_periodo ? 'fino al' : 'rinnovo'} ${data(a.periodo_fine.slice(0, 10))}` : ''}` : '';
+    return `<div class="text-xs border-t border-slate-100 pt-3">
+        <span class="text-slate-600"><i class="fa-solid fa-id-card mr-1 text-slate-400"></i>Abbonamento: ${badgeAbbonamento(a?.stato || 'nessuno')}<span class="ml-1">${esc(dettaglio)}</span></span>
     </div>`;
 }
 
@@ -1475,15 +1468,6 @@ document.addEventListener('click', async (e) => {
             await api('cambia-piano', { conAccesso: true, dati: { piano: p } });
             await vai('abbonamento');
             avviso(`Piano ${PIANI_INFO[p].nome} attivo`, 'ok');
-        } catch (err) { avviso(err.message); t.disabled = false; }
-        return;
-    }
-    if (t.dataset.esente) {
-        const [tipo, id, valore] = t.dataset.esente.split(':');
-        t.disabled = true;
-        try {
-            await api('admin', { conAccesso: true, dati: { azione: 'imposta_esente', tipo, id, esente: valore === '1' } });
-            await vai(st.scheda);
         } catch (err) { avviso(err.message); t.disabled = false; }
         return;
     }

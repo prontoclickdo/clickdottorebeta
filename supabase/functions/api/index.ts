@@ -343,9 +343,9 @@ type R = any;
 async function hubIdonei(): Promise<R[]> {
   const [{ data: elenco }, { data: abb }] = await Promise.all([
     db.from("hub").select("*").eq("attivo", true).eq("stripe_pronto", true).not("stripe_account_id", "is", null).order("creato_il"),
-    db.from("abbonamenti").select("hub_id, esente, stato").not("hub_id", "is", null),
+    db.from("abbonamenti").select("hub_id, stato").not("hub_id", "is", null),
   ]);
-  const validi = new Set((abb ?? []).filter((a: R) => a.esente || STATI_VALIDI.includes(a.stato)).map((a: R) => a.hub_id));
+  const validi = new Set((abb ?? []).filter((a: R) => STATI_VALIDI.includes(a.stato)).map((a: R) => a.hub_id));
   return (elenco ?? []).filter((h: R) => validi.has(h.id));
 }
 
@@ -1337,17 +1337,6 @@ async function admin(req: Request) {
       if (error) throw new HttpError(500, "Impossibile creare la prestazione");
       return json(req, data);
     }
-    case "imposta_esente": {
-      const tipo = String(body.tipo ?? "");
-      if (!["hub", "medico"].includes(tipo)) throw new HttpError(400, "Tipo non valido");
-      const id = uuid(body.id, tipo);
-      const colonna = tipo === "hub" ? "hub_id" : "medico_id";
-      const { error } = await db.from("abbonamenti")
-        .upsert({ [colonna]: id, esente: body.esente === true, aggiornato_il: new Date().toISOString() }, { onConflict: colonna });
-      if (error) throw new HttpError(500, "Impossibile aggiornare l'abbonamento");
-      await registra(io.id, "imposta_esente", null, { tipo, id, esente: body.esente === true });
-      return json(req, { ok: true });
-    }
     case "imposta_attivo": {
       const tabella = String(body.tabella ?? "");
       if (!["hub", "medici", "prestazioni", "profili"].includes(tabella)) throw new HttpError(400, "Tabella non valida");
@@ -1844,8 +1833,8 @@ async function statoAbbonamento(req: Request) {
     admin: false,
     nome: await nomeSoggetto(s),
     tipo: s.medico_id ? "medico" : "hub",
-    valido: !!ab && (ab.esente || STATI_VALIDI.includes(ab.stato)),
-    esente: !!ab?.esente,
+    // nessuna esenzione: l'accesso richiede sempre un abbonamento Stripe attivo
+    valido: !!ab && STATI_VALIDI.includes(ab.stato),
     piano: ab?.piano ?? null,
     stato: ab?.stato ?? "nessuno",
     periodo_fine: ab?.periodo_fine ?? null,
@@ -1863,7 +1852,7 @@ async function abbonati(req: Request) {
   const body = await req.json().catch(() => ({}));
   const p = piano(body.piano);
   const ab = await abbonamentoDi(s);
-  if (ab && (ab.esente || STATI_VALIDI.includes(ab.stato))) throw new HttpError(409, "Il tuo abbonamento è già attivo");
+  if (ab && STATI_VALIDI.includes(ab.stato)) throw new HttpError(409, "Il tuo abbonamento è già attivo");
   if (ab && STATI_IN_SOSPESO.includes(ab.stato)) {
     throw new HttpError(409, "C'è un pagamento in sospeso: regolarizzalo da «Gestisci pagamento»");
   }
