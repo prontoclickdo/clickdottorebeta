@@ -28,7 +28,8 @@ select cron.schedule('promemoria-visite', '5 * * * *', $cron$
       'Content-Type', 'application/json',
       'apikey', 'sb_publishable_r2K5TaXfKd8Bjj7iQek_Aw_WgIlHDQy',
       'x-cron-secret', (select valore from public.chiavi_interne where nome = 'cron')),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 30000   -- la funzione può impiegare più dei 5 secondi predefiniti quando parte a freddo
   );
 $cron$);
 
@@ -39,10 +40,12 @@ select cron.schedule('verifica-pagamenti-hub', '*/5 * * * *', $cron$
       'Content-Type', 'application/json',
       'apikey', 'sb_publishable_r2K5TaXfKd8Bjj7iQek_Aw_WgIlHDQy',
       'x-cron-secret', (select valore from public.chiavi_interne where nome = 'cron')),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 30000   -- la funzione può impiegare più dei 5 secondi predefiniti quando parte a freddo
   );
 $cron$);
 
 -- verifica: i due processi e il loro comando
-select jobname, schedule, position('x-cron-secret' in command) > 0 as invia_codice
+select jobname, schedule, position('x-cron-secret' in command) > 0 as invia_codice,
+       position('timeout_milliseconds' in command) > 0 as attesa_30s
   from cron.job where jobname in ('promemoria-visite', 'verifica-pagamenti-hub');
