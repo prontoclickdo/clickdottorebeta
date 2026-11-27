@@ -1212,6 +1212,7 @@ async function gestioneMedico(req: Request) {
     case "salva_profilo": {
       const { error } = await db.from("medici").update({
         ...(body.genere !== undefined ? datiGenere(body) : {}),
+        ...(body.provincia !== undefined ? { provincia: siglaProvincia(body.provincia) } : {}),
         indirizzo: testo(body.indirizzo, "indirizzo", 160, false) || null,
         telefono: testo(body.telefono, "telefono", 30, false) || null,
       }).eq("id", medicoId);
@@ -1223,6 +1224,13 @@ async function gestioneMedico(req: Request) {
   }
 }
 
+
+// sigla della provincia dello studio (due lettere maiuscole, es. BA)
+function siglaProvincia(v: unknown): string {
+  const p = String(v ?? "").trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(p)) throw new HttpError(400, "Scegli la provincia dello studio");
+  return p;
+}
 
 async function linkAccesso(tipo: "invite" | "recovery", email: string) {
   const { data, error } = await db.auth.admin.generateLink({

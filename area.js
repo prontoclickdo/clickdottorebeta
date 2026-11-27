@@ -9,6 +9,8 @@ const RUOLI = { admin: 'Amministratore', operatore: 'Hub', medico: 'Medico', med
 const ATTIVE = ['richiesta', 'da_pagare', 'confermata'];
 const CHIUSE = ['completata', 'annullata', 'rimborsata', 'rifiutata', 'scaduta'];
 const GIORNI = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+// sigle delle province italiane (prima parte del codice della prenotazione, es. BA-M-2026-...)
+const PROVINCE = 'AG AL AN AO AP AQ AR AT AV BA BG BI BL BN BO BR BS BT BZ CA CB CE CH CL CN CO CR CS CT CZ EN FC FE FG FI FM FR GE GO GR IM IS KR LC LE LI LO LT LU MB MC ME MI MN MO MS MT NA NO NU OR PA PC PD PE PG PI PN PO PR PT PU PV PZ RA RC RE RG RI RM RN RO SA SI SO SP SR SS SU SV TA TE TN TO TP TR TS TV UD VA VB VC VE VI VR VT VV'.split(' ');
 const METODI = { pos: 'POS / carta', contanti: 'contanti', bonifico: 'bonifico istantaneo', altro: 'altro', stripe: 'carta online', bollettino: 'bollettino online' };
 
 const st = {
@@ -788,6 +790,9 @@ function disegnaTariffe() {
                         <input name="dicitura_specializzazione" maxlength="30" value="${esc(medico.dicitura_specializzazione || '')}" placeholder="Es. Specialista in" class="${classeCampo}"></label>
                 </div>
                     <p class="text-xs text-slate-500 -mt-1">Serve per indicare correttamente titolo e specializzazione nella ricerca, nelle pagine e nelle email. Con "Altro" il professionista sceglie come essere identificato/a.</p>
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Provincia dello studio${medico.citta ? ` (${esc(medico.citta)})` : ''}</span>
+                        <select name="provincia" required class="${classeCampo}"><option value="">Scegli...</option>${PROVINCE.map((p) => `<option value="${p}" ${medico.provincia === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label>
+                    <p class="text-xs text-slate-500 -mt-1">Si ricava da sola dal comune; correggila se il comune ha lo stesso nome di un altro in un'altra provincia. È la sigla iniziale dei codici delle prenotazioni (es. ${esc(medico.provincia || 'BA')}-M-${new Date().getFullYear()}-...).</p>
                     <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Indirizzo dello studio</span>
                         <input name="indirizzo" maxlength="160" value="${esc(medico.indirizzo || '')}" class="${classeCampo}" placeholder="Comunicato al paziente con la conferma"></label>
                     <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Telefono (visibile agli hub)</span>
