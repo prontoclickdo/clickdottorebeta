@@ -1014,7 +1014,7 @@ function disegnaMedici() {
                 <button type="submit" class="${btnPrimario} w-full">Aggiungi il medico</button>
             </form>
             <div class="lg:col-span-3 space-y-3">
-                ${soloMedici().length ? soloMedici().map(cardMedico).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun medico (i medici che fanno anche da hub sono nella scheda Medici+Hub).</div>`}
+                ${soloMedici().length ? soloMedici().map((m) => cardMedico(m)).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun medico (i medici che fanno anche da hub sono nella scheda Medici+Hub).</div>`}
             </div>
         </div>`;
 }
