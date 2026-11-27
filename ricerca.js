@@ -10,7 +10,7 @@ function pulisci(valore) {
 function norm(v) {
     return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9%]+/g, ' ').trim();
 }
-const PAROLE_VUOTE = new Set(['e', 'ed', 'di', 'del', 'della', 'dei', 'delle', 'la', 'il', 'lo', 'le', 'dott', 'dottor', 'dottore', 'dottoressa', 'dr', 'dssa', 'ssa', 'prof', 'professor', 'professore', 'professoressa']);
+const PAROLE_VUOTE = new Set(['e', 'ed', 'di', 'del', 'dell', 'dello', 'della', 'dei', 'delle', 'la', 'il', 'lo', 'le', 'dott', 'dottor', 'dottore', 'dottoressa', 'dr', 'dssa', 'ssa', 'prof', 'professor', 'professore', 'professoressa']);
 function paroleSignificative(testo) {
     return norm(testo).replace(/%/g, ' ').split(' ').filter((w) => w.length >= 2 && !PAROLE_VUOTE.has(w)).slice(0, 6);
 }
@@ -28,6 +28,10 @@ function corrisponde(m, cercato) {
     return !!spec && (spec.includes(q) || q.includes(spec));
 }
 
+// Specializzazione dell'elenco corrispondente a un testo: nome attuale, nome precedente (es. "Cardiologia")
+// o parola d'uso comune (es. "oculista"). Vedi specializzazioni.js.
+const specializzazioneDa = (testo) => (window.specializzazioneDa ? window.specializzazioneDa(testo) : null);
+
 async function cercaMedici(specialita, luogo) {
     const el = document.getElementById('elenco-medici');
     if (!el) return;
@@ -35,14 +39,22 @@ async function cercaMedici(specialita, luogo) {
 
     let q = supabase.from('medici_pubblici').select('*').order('cognome').limit(300);
     const s = pulisci(specialita);
+    // se il testo è una specializzazione (anche con il nome precedente o un sinonimo) si cercano i medici di quella
+    // specializzazione, compresi quelli salvati con un nome precedente
+    const spec = s ? specializzazioneDa(specialita) : null;
+    const nomiSpec = spec ? [spec, ...Object.keys(window.SPECIALIZZAZIONI_PRECEDENTI || {}).filter((k) => window.SPECIALIZZAZIONI_PRECEDENTI[k] === spec)] : [];
     // candidati: medici in cui compare almeno una delle parole cercate (nome, cognome o specializzazione)
     const parole = paroleSignificative(s);
-    if (parole.length) q = q.or(parole.flatMap((w) => [`specializzazione.ilike."%${w}%"`, `cognome.ilike."%${w}%"`, `nome.ilike."%${w}%"`]).join(','));
+    const filtri = [
+        ...nomiSpec.map((n) => `specializzazione.ilike."${pulisci(n)}"`),
+        ...parole.flatMap((w) => [`specializzazione.ilike."%${w}%"`, `cognome.ilike."%${w}%"`, `nome.ilike."%${w}%"`]),
+    ];
+    if (filtri.length) q = q.or(filtri.join(','));
     const citta = pulisci(String(luogo || '').replace(/\([^)]*\)/g, ' ').replace(/\b\d{5}\b/g, ' '));
     if (citta) q = q.ilike('citta', `%${citta}%`);
 
     const { data: trovati, error } = await q;
-    let medici = s ? (trovati || []).filter((m) => corrisponde(m, s)) : (trovati || []);
+    let medici = s ? (trovati || []).filter((m) => (spec && specializzazioneDa(m.specializzazione) === spec) || corrisponde(m, s)) : (trovati || []);
 
     // medici che eseguono la prestazione cercata (es. "Ecocardiogramma", "Holter cardiaco 24 ore")
     let prestCercata = null;

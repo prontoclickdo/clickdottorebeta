@@ -66,12 +66,12 @@
         </div>
     </footer>
 
-    <script src="specializzazioni.js?v=1"></script>
-    <script src="prestazioni-catalogo.js?v=1"></script>
+    <script src="specializzazioni.js?v=2"></script>
+    <script src="prestazioni-catalogo.js?v=2"></script>
     <script src="suggerimenti-medici.js?v=1"></script>
     <script type="module">
         import { supabase, esc } from './app.js?v=6';
-        import './ricerca.js?v=12';
+        import './ricerca.js?v=13';
         const $ = (id) => document.getElementById(id);
 
         // ---------------- ricerca indicata nell'indirizzo: sopravvive a ricarica, "indietro" e condivisione ----------------
@@ -104,7 +104,7 @@
         const norm = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/['’`´.\-]+/g, ' ').replace(/\s+/g, ' ').trim();
         const perNome = (a, b) => a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' });
         const voci = [
-            ...(window.SPECIALIZZAZIONI || []).map((nome) => ({ nome, tipo: '' })),
+            ...(window.SPECIALIZZAZIONI || []).map((nome) => ({ nome, tipo: '', sinonimi: ((window.SINONIMI_SPECIALIZZAZIONI || {})[nome] || []).map((x) => [x, norm(x)]) })),
             ...(() => {
                 const m = new Map();
                 Object.values(window.CATALOGO_PRESTAZIONI || {}).forEach((l) => l.forEach(([nome]) => { if (!m.has(nome.toLowerCase())) m.set(nome.toLowerCase(), { nome, tipo: 'Prestazione' }); }));
@@ -139,14 +139,19 @@
             if (campo === 'q') {
                 const inizio = voci.filter((v) => v.norm.startsWith(t));
                 const parola = voci.filter((v) => !v.norm.startsWith(t) && v.norm.split(/[\s(\/,]+/).some((w) => w.startsWith(t)));
-                const ordina = (l) => [...l.filter((v) => !v.tipo).sort(perNome), ...l.filter((v) => v.tipo).sort(perNome)];
+                // specializzazioni trovate con un sinonimo (es. "cardiologo" -> "Malattie dell’apparato cardiovascolare")
+                const giaTrovate = new Set([...inizio, ...parola]);
+                const perSinonimo = voci.filter((v) => v.sinonimi && !giaTrovate.has(v)).map((v) => {
+                    const sin = v.sinonimi.find(([, n]) => n.startsWith(t) || n.split(/[\s(\/,]+/).some((w) => w.startsWith(t)));
+                    return sin ? { ...v, via: sin[0] } : null;
+                }).filter(Boolean);
                 const SM = window.SuggerimentiMedici;
                 if (SM && !SM.pronti()) SM.quandoPronti(() => { if (document.activeElement === $('q')) suggerisci('q'); });
                 const medici = SM ? SM.trova(testo).slice(0, 8).map((m) => ({
                     link: SM.link(m), tag: 'Medico',
                     testo: `<i class="fa-solid fa-user-doctor text-skybrand-500 mr-2"></i><span class="font-semibold text-slate-800">${esc(m.etichetta)}</span><span class="block text-xs text-slate-500 ml-6">${esc(SM.dettagli(m))}</span>`,
                 })) : [];
-                elenco = [...medici, ...[...ordina(inizio), ...ordina(parola)].slice(0, 40).map((v) => ({ valore: v.nome, testo: esc(v.nome), tag: v.tipo }))];
+                elenco = [...medici, ...[...inizio.filter((v) => !v.tipo).sort(perNome), ...parola.filter((v) => !v.tipo).sort(perNome), ...perSinonimo.sort(perNome), ...inizio.filter((v) => v.tipo).sort(perNome), ...parola.filter((v) => v.tipo).sort(perNome)].slice(0, 40).map((v) => ({ valore: v.nome, testo: esc(v.nome), tag: v.via || v.tipo }))];
             } else {
                 if (!comuni) { caricaComuni(); return; }
                 if (/^\d+$/.test(t)) {

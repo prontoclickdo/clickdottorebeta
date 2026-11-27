@@ -92,10 +92,10 @@
                     <h1 class="text-3xl sm:text-4xl md:text-5xl font-extrabold text-slate-900 leading-tight mb-4">
                         Prenota la tua visita medica online
                     </h1>
-                    <p class="hero-type" aria-label="Trova un dermatologo, uno psicologo, un dentista e tanti altri professionisti">
+                    <p class="hero-type" aria-label="Trova un dermatologo, un cardiologo, un oculista e tanti altri specialisti">
                         <span>Trova</span>
                         <span class="hero-type-box" aria-hidden="true">
-                            <span class="hero-type-sizer">il tuo medico di base</span>
+                            <span class="hero-type-sizer">un endocrinologo</span>
                             <span class="hero-type-live"><span id="hero-type-word">un dermatologo</span></span>
                         </span>
                     </p>
@@ -249,8 +249,8 @@
         </div>
     </footer>
 
-    <script src="specializzazioni.js?v=1"></script>
-    <script src="prestazioni-catalogo.js?v=1"></script>
+    <script src="specializzazioni.js?v=2"></script>
+    <script src="prestazioni-catalogo.js?v=2"></script>
     <script src="suggerimenti-medici.js?v=1"></script>
     <script>
         const state = { isAutoSelecting: false };
@@ -274,7 +274,9 @@
 
         const RAW_SPECIALTIES = window.SPECIALIZZAZIONI || [];
 
-        const SPECIALTIES = RAW_SPECIALTIES.map((name) => ({ name }));
+        // ogni specializzazione con i suoi sinonimi (nomi precedenti e parole d'uso comune, es. "cardiologo"), già normalizzati
+        const SINONIMI = window.SINONIMI_SPECIALIZZAZIONI || {};
+        const SPECIALTIES = RAW_SPECIALTIES.map((name) => ({ name, sinonimi: (SINONIMI[name] || []).map((v) => [v, normalizeText(v)]) }));
         // prestazioni del listino (senza doppioni), cercabili dalla stessa casella
         const PRESTAZIONI = (() => {
             const viste = new Map();
@@ -8466,10 +8468,16 @@ Zungri|VV|`;
                 // poi quelle in cui il testo è l'inizio di un'altra parola del nome (es. "pediatrica")
                 const startsWith = [];
                 const wordStart = [];
+                const perSinonimo = [];
                 SPECIALTIES.forEach((s) => {
                     const name = normalizeText(s.name);
                     if (name.startsWith(query)) startsWith.push(s);
-                    else if (name.split(/[\s(\/,'-]+/).some((w) => w.startsWith(query))) wordStart.push(s);
+                    else if (name.split(/[\s(\/,'’-]+/).some((w) => w.startsWith(query))) wordStart.push(s);
+                    else {
+                        // es. "cardiolog" trova "Malattie dell’apparato cardiovascolare" (con l'indicazione "Cardiologia")
+                        const sin = s.sinonimi.find(([, n]) => n.startsWith(query) || n.split(/[\s(\/,'’-]+/).some((w) => w.startsWith(query)));
+                        if (sin) perSinonimo.push({ ...s, via: sin[0] });
+                    }
                 });
                 // poi le prestazioni, con lo stesso criterio
                 const prestInizio = [];
@@ -8477,9 +8485,9 @@ Zungri|VV|`;
                 PRESTAZIONI.forEach((s) => {
                     const name = normalizeText(s.name);
                     if (name.startsWith(query)) prestInizio.push(s);
-                    else if (name.split(/[\s(\/,'-]+/).some((w) => w.startsWith(query))) prestParola.push(s);
+                    else if (name.split(/[\s(\/,'’-]+/).some((w) => w.startsWith(query))) prestParola.push(s);
                 });
-                matches = startsWith.sort(byName).concat(wordStart.sort(byName), prestInizio.sort(byName), prestParola.sort(byName));
+                matches = startsWith.sort(byName).concat(wordStart.sort(byName), perSinonimo.sort(byName), prestInizio.sort(byName), prestParola.sort(byName));
             }
 
             // medici trovati per nome, cognome o titolo: in cima all'elenco, aprono la pagina del medico
@@ -8528,10 +8536,10 @@ Zungri|VV|`;
                 label.textContent = specialty.name;
 
                 row.append(label);
-                if (specialty.prestazione) {
+                if (specialty.prestazione || specialty.via) {
                     const tag = document.createElement('span');
                     tag.className = 'shrink-0 text-[11px] font-semibold text-slate-400';
-                    tag.textContent = 'Prestazione';
+                    tag.textContent = specialty.prestazione ? 'Prestazione' : specialty.via;
                     row.append(tag);
                 }
                 container.appendChild(row);
@@ -8708,7 +8716,7 @@ Zungri|VV|`;
             var word = document.getElementById('hero-type-word');
             if (!word) return;
             var box = word.parentNode;                              // contenitore: la dissolvenza è su di lui, non sul testo sfumato
-            var phrases = ['un dermatologo', 'uno psicologo', 'un dentista', 'un cardiologo', 'una ginecologa', 'un pediatra', 'un fisioterapista', 'un oculista', 'un nutrizionista', 'il tuo medico di base'];
+            var phrases = ['un dermatologo', 'un cardiologo', 'una ginecologa', 'un pediatra', 'un oculista', 'un ortopedico', 'un neurologo', 'un endocrinologo', 'un fisiatra', 'un otorino'];
             var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             var OUT = 2200, IN = 1500;                              // durata dissolvenza in uscita / in entrata (ms)
             var i = 0, busy = false;
@@ -8727,7 +8735,7 @@ Zungri|VV|`;
             setInterval(next, 5000);
         })();
     </script>
-    <script type="module" src="ricerca.js?v=12"></script>
+    <script type="module" src="ricerca.js?v=13"></script>
     <script type="module">
         // chi ha già effettuato l'accesso vede "La mia area" al posto di Accedi / Registrati
         import { supabase } from './app.js?v=6';

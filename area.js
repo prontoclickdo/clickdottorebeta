@@ -687,6 +687,9 @@ function specializzazioneListino(medico) {
     const cat = window.CATALOGO_PRESTAZIONI || {};
     if (st.listinoSpec && cat[st.listinoSpec]) return st.listinoSpec;
     if (cat[medico.specializzazione]) return medico.specializzazione;
+    // medico salvato con un nome precedente o un sinonimo (es. "Cardiologia" -> "Malattie dell’apparato cardiovascolare")
+    const attuale = window.specializzazioneDa ? window.specializzazioneDa(medico.specializzazione) : null;
+    if (attuale && cat[attuale]) return attuale;
     const n = chiaveNome(medico.specializzazione);
     return Object.keys(cat).find((k) => n && (chiaveNome(k).includes(n) || n.includes(chiaveNome(k)))) || Object.keys(cat)[0];
 }
@@ -721,8 +724,9 @@ function listino(medico, prest) {
             <p class="text-sm text-slate-500">Spunta le prestazioni che offri e indica tariffa e durata: compaiono ai pazienti nella ricerca della pagina principale e durante la prenotazione. Togliendo la spunta la prestazione non è più prenotabile (le prenotazioni già fatte restano valide).</p>
             <div class="hidden sm:grid grid-cols-12 gap-2 text-xs font-semibold text-slate-500 border-b border-slate-100 pb-1">
                 <span class="col-span-6">Prestazione</span><span class="col-span-3">Tariffa</span><span class="col-span-3">Durata</span></div>
-            <div class="divide-y divide-slate-100">${righe}</div>
-            <button type="submit" class="${btnPrimario} w-full sm:w-auto">Salva il listino</button>
+            ${voci.length ? `<div class="divide-y divide-slate-100">${righe}</div>
+            <button type="submit" class="${btnPrimario} w-full sm:w-auto">Salva il listino</button>`
+            : '<p class="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5">Per questa specializzazione non c\'è un listino predefinito: aggiungi le prestazioni con il modulo «Prestazione non presente nel listino» qui sotto.</p>'}
         </form>`;
 }
 
