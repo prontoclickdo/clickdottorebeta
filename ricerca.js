@@ -46,11 +46,13 @@ async function cercaMedici(specialita, luogo) {
 
     // medici che eseguono la prestazione cercata (es. "Ecocardiogramma", "Holter cardiaco 24 ore")
     let prestCercata = null;
-    if (s && !error) {
+    // la parte tra parentesi è un dettaglio: "Elettrocardiogramma (ECG)" trova anche "Elettrocardiogramma"
+    const sPrest = pulisci(String(specialita || '').replace(/\([^)]*\)/g, ' '));
+    if (sPrest && !error) {
         const { data: perPrestazione } = await supabase.from('prestazioni_pubbliche').select('medico_id, nome')
-            .ilike('nome', `%${s}%`).limit(1000);
+            .ilike('nome', `%${sPrest}%`).limit(1000);
         if (perPrestazione?.length) {
-            prestCercata = norm(specialita);
+            prestCercata = norm(sPrest);
             const gia = new Set(medici.map((m) => m.id));
             const altri = [...new Set(perPrestazione.map((p) => p.medico_id))].filter((id) => !gia.has(id));
             if (altri.length) {
