@@ -88,8 +88,15 @@
         import { supabase, api, erroriPaziente, messaggio } from './app.js';
         const $ = (id) => document.getElementById(id);
 
+        // se si arriva dalla pagina di un medico, dopo l'attivazione dell'account si torna alla prenotazione
+        const torna = new URLSearchParams(location.search).get('torna') || '';
+        if (/^prenota\.html\?[\w=&%-]*$/.test(torna)) {
+            try { localStorage.setItem('cd_torna', torna); } catch (_) { /* memoria del browser non disponibile */ }
+            document.querySelectorAll('a[href="accedi.html"]').forEach((l) => { l.href = `accedi.html?torna=${encodeURIComponent(torna)}`; });
+        }
+
         const { data: s } = await supabase.auth.getSession();
-        if (s.session) location.replace('area-paziente.html');
+        if (s.session) location.replace(/^prenota\.html\?/.test(torna) ? torna : 'area-paziente.html');
 
         const f = $('form-registrati');
         f.data_nascita.max = new Date().toISOString().slice(0, 10);
