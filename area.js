@@ -154,7 +154,7 @@ function schede() {
     if (r === 'admin' || io.medico_id) elenco.push(['orari', 'Orari', 'fa-clock'], ['tariffe', 'Prestazioni e tariffe', 'fa-tags']);
     if (r === 'admin') elenco.push(['conti', 'Conti hub (storico)', 'fa-scale-balanced']);
     else if (io.hub_id) elenco.push(['incassi', 'Incassi', 'fa-wallet']);
-    if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['medicihub', 'Medici che fanno anche da hub', 'fa-house-medical'], ['utenze', 'Utenze', 'fa-users'], ['candidature', 'Candidature', 'fa-envelope-open-text'], ['impostazioni', 'Impostazioni', 'fa-gear']);
+    if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['medicihub', 'Medici+Hub', 'fa-house-medical'], ['utenze', 'Utenze', 'fa-users'], ['candidature', 'Candidature', 'fa-envelope-open-text'], ['impostazioni', 'Impostazioni', 'fa-gear']);
     if (r === 'operatore') elenco.unshift(elenco.splice(1, 1)[0]);
     if (r !== 'admin') elenco.push(['abbonamento', 'Abbonamento', 'fa-id-card']);
     $('schede').innerHTML = elenco.map(([id, testo, icona]) => `
@@ -973,7 +973,7 @@ function disegnaMediciHub() {
     $('vista').innerHTML = `
         <div class="space-y-5">
             <div class="${card} text-sm text-slate-600 space-y-1">
-                <h2 class="font-bold text-slate-900">Medici che fanno anche da hub</h2>
+                <h2 class="font-bold text-slate-900">Medici+Hub</h2>
                 <p>Per aggiungerne uno: crea il medico nella scheda Medici e l'hub (tipo "Medico che fa da hub") nella scheda Hub, poi nella scheda Utenze crea un'utenza "Medico che fa anche da hub" collegata a entrambi. Da quel momento compare qui.</p>
             </div>
             ${coppie.length ? coppie.map((c) => `
@@ -1014,7 +1014,7 @@ function disegnaMedici() {
                 <button type="submit" class="${btnPrimario} w-full">Aggiungi il medico</button>
             </form>
             <div class="lg:col-span-3 space-y-3">
-                ${soloMedici().length ? soloMedici().map(cardMedico).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun medico (i medici che fanno anche da hub sono nella loro scheda).</div>`}
+                ${soloMedici().length ? soloMedici().map(cardMedico).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun medico (i medici che fanno anche da hub sono nella scheda Medici+Hub).</div>`}
             </div>
         </div>`;
 }
@@ -1036,7 +1036,7 @@ function disegnaHub() {
                 <button type="submit" class="${btnPrimario} w-full">Aggiungi l'hub</button>
             </form>
             <div class="lg:col-span-3 space-y-3">
-                ${soloHub().length ? soloHub().map(cardHub).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun hub (i medici che fanno anche da hub sono nella loro scheda).</div>`}
+                ${soloHub().length ? soloHub().map(cardHub).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun hub (i medici che fanno anche da hub sono nella scheda Medici+Hub).</div>`}
             </div>
         </div>`;
 }
