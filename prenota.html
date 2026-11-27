@@ -209,7 +209,7 @@
             if (!m || !pr || !pr.length) return nonTrovato();
             medico = m; prestazioni = pr; percento = q;
             const prestazionePreferita = params.get('prestazione') || '';
-            $('medico-nome').textContent = `Dott. ${m.nome} ${m.cognome}`;
+            $('medico-nome').textContent = `${m?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${m.nome} ${m.cognome}`;
             $('medico-info').textContent = `${m.specializzazione} · ${m.citta}`;
             $('caricamento').hidden = true;
             $('contenuto').hidden = false;
@@ -339,7 +339,7 @@
                 el.innerHTML = `<div class="rounded-xl border border-skybrand-200 bg-skybrand-50 p-4 text-sm text-slate-700">
                     <div class="font-semibold text-slate-900"><i class="fa-solid fa-hospital mr-1.5 text-skybrand-600"></i>${esc(h?.nome || 'Studio del medico')}</div>
                     <div class="text-xs text-slate-500 mt-0.5">${esc([h?.indirizzo, h?.citta].filter(Boolean).join(', '))}</div>
-                    <p class="mt-2">Il Dott. ${esc(medico.cognome)} fa anche da hub: la prenotazione e il ticket sono gestiti direttamente dal suo studio.</p></div>`;
+                    <p class="mt-2">${medico.genere === 'F' ? 'La Dott.ssa' : 'Il Dott.'} ${esc(medico.cognome)} fa anche da hub: la prenotazione e il ticket sono gestiti direttamente dal suo studio.</p></div>`;
                 return;
             }
             if (!hubs.length) {
@@ -448,7 +448,7 @@
             const pr = prestazioni.find((p) => p.id === prestazioneId);
             const riga = (k, v) => `<div><dt class="text-xs text-slate-500">${k}</dt><dd class="font-medium text-slate-900 break-words">${esc(v)}</dd></div>`;
             $('riepilogo-dati').innerHTML = [
-                riga('Medico', `Dott. ${medico.nome} ${medico.cognome} · ${medico.specializzazione}`),
+                riga('Medico', `${medico?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${medico.nome} ${medico.cognome} · ${medico.specializzazione}`),
                 riga('Prestazione', pr?.nome || ''),
                 riga('Data e ora', quando(slotScelto)),
                 riga('Durata', durata(pr?.durata_minuti || 30)),

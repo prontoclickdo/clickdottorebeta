@@ -92,7 +92,7 @@
                     $('codice').textContent = r.codice;
                     const riga = (k, v) => `<div><dt class="text-xs text-slate-500">${k}</dt><dd class="font-medium text-slate-900">${esc(v)}</dd></div>`;
                     $('dettagli').innerHTML = [
-                        riga('Medico', `Dott. ${r.medico?.nome ?? ''} ${r.medico?.cognome ?? ''}`),
+                        riga('Medico', `${r.medico?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${r.medico?.nome ?? ''} ${r.medico?.cognome ?? ''}`),
                         riga('Specializzazione', r.medico?.specializzazione ?? ''),
                         riga('Prestazione', r.prestazione ?? ''),
                         riga('Data e ora', quando(r.visita_il)),

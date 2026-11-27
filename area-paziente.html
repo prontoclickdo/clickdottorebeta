@@ -193,7 +193,7 @@
 
         async function caricaPrenotazioni() {
             const { data: righe, error } = await supabase.from('prenotazioni')
-                .select('id, codice, stato, creata_il, visita_il, scadenza, pagata_il, nota_medico, motivo_rifiuto, quota_cents, medico:medici(nome, cognome, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)')
+                .select('id, codice, stato, creata_il, visita_il, scadenza, pagata_il, nota_medico, motivo_rifiuto, quota_cents, medico:medici(nome, cognome, genere, specializzazione, citta, indirizzo), prestazione:prestazioni(nome)')
                 .eq('paziente_id', uid)
                 .order('creata_il', { ascending: false });
             const el = $('elenco');
@@ -228,7 +228,7 @@
                     <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                         <div class="min-w-0">
                             <h3 class="font-bold text-slate-900">${esc(p.prestazione?.nome || 'Prestazione')}</h3>
-                            <p class="text-sm text-slate-500">${m ? `Dott. ${esc(m.nome)} ${esc(m.cognome)} · ${esc(m.specializzazione)} · ${esc(m.citta)}` : ''}</p>
+                            <p class="text-sm text-slate-500">${m ? `${m?.genere === 'F' ? 'Dott.ssa' : 'Dott.'} ${esc(m.nome)} ${esc(m.cognome)} · ${esc(m.specializzazione)} · ${esc(m.citta)}` : ''}</p>
                         </div>
                         <div class="shrink-0">${badge(p.stato)}</div>
                     </div>
