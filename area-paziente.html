@@ -210,7 +210,7 @@
                     ? `<p class="mt-3 text-sm ${p.stato === 'confermata' ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : 'text-slate-700 bg-slate-50 border-slate-200'} border rounded-xl px-3.5 py-2.5"><i class="fa-regular fa-calendar${p.stato === 'confermata' ? '-check' : ''} mr-1.5"></i><strong>${esc(quando(p.visita_il))}</strong>${p.stato === 'confermata' ? dove : ''}</p>` : '';
                 const paga = p.stato === 'da_pagare' && !p.pagata_il ? `
                     <div class="mt-3 rounded-xl border border-skybrand-200 bg-skybrand-50 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <p class="text-sm text-slate-700">Il medico ha confermato. Paga la quota entro <strong>${esc(quando(p.scadenza))}</strong>, altrimenti l'orario torna libero.</p>
+                        <p class="text-sm text-slate-700">Il medico ha confermato. Paga il ticket di prenotazione entro <strong>${esc(quando(p.scadenza))}</strong>, altrimenti l'orario torna libero.<span class="block text-xs text-slate-500 mt-1">Il ticket è incassato dall'hub e sostiene la sua assistenza; la tariffa della visita si paga al medico.</span></p>
                         <button type="button" data-paga="${p.id}" class="shrink-0 px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60"><i class="fa-solid fa-lock mr-1"></i> Paga ${euro(p.quota_cents)}</button>
                     </div>` : '';
                 const attesa = p.stato === 'richiesta' ? `<p class="mt-2 text-xs text-slate-500">Il medico deve rispondere entro ${esc(quando(p.scadenza))}. Ti avviseremo via email.</p>` : '';

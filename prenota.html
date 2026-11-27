@@ -85,7 +85,7 @@
             <form id="modulo" hidden novalidate class="space-y-5">
                 <div class="rounded-xl border px-4 py-3 text-sm bg-skybrand-50 border-skybrand-200 text-slate-700">
                     <i class="fa-solid fa-circle-info mr-1.5 text-skybrand-500"></i>Scegli prestazione e orario: la richiesta arriva al medico, che la conferma o la rifiuta entro 48 ore.
-                    Solo dopo la conferma paghi la quota di prenotazione<span id="quota-info"></span>, entro 24 ore.
+                    Solo dopo la conferma paghi il ticket di prenotazione<span id="quota-info"></span>, entro 24 ore: serve a sostenere l'assistenza degli hub aderenti. La tariffa della visita si paga al medico.
                 </div>
                 <section class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
                     <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">1 · Scegli la prestazione</h2>
@@ -128,7 +128,7 @@
                 <dl id="riepilogo-dati" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm"></dl>
                 <div class="rounded-xl bg-skybrand-50 border border-skybrand-200 p-4 text-sm text-slate-700">
                     Adesso non paghi nulla. Se il medico conferma riceverai un'email e avrai <strong>24 ore</strong> per pagare la quota di prenotazione<span id="riepilogo-quota"></span> dalla tua area personale.
-                    <span class="block text-xs text-slate-500 mt-1">Il costo della visita si paga al medico. Il medico ha 48 ore per confermare la richiesta.</span>
+                    <span class="block text-xs text-slate-500 mt-1">Il costo della visita, stabilito dal medico, si paga al medico. Il ticket di prenotazione è incassato dall'hub e sostiene l'assistenza per prenotazione, eventuali spostamenti di orario o giorno e altre necessità. Il medico ha 48 ore per confermare la richiesta.</span>
                     <span class="block text-xs text-slate-500 mt-1"><strong>Rimborso:</strong> se cambi idea, la quota ti viene rimborsata solo se annulli almeno 48 ore prima della visita; dopo non è rimborsabile.</span>
                 </div>
                 <div id="errori-invio" hidden></div>
@@ -220,7 +220,7 @@
                 // Medico con abbonamento sospeso: prestazioni visibili, prenotazioni bloccate per tutti.
                 const tornaA = (pid) => `prenota.html?medico=${encodeURIComponent(medicoId)}${pid ? `&prestazione=${encodeURIComponent(pid)}` : ''}`;
                 const ordinate = [...pr].sort((a, b) => (/visita/i.test(b.nome) - /visita/i.test(a.nome)) || a.nome.localeCompare(b.nome, 'it'));
-                $('listino-nota').textContent = `Prezzi stabiliti dal medico, da pagare al medico. Per prenotare online si aggiunge un ticket di prenotazione pari al ${percentoTesto(percento)} della tariffa, da pagare solo dopo la conferma.`;
+                $('listino-nota').textContent = `Prezzi stabiliti dal medico, da pagare al medico. Per prenotare si aggiunge un ticket di prenotazione pari al ${percentoTesto(percento)} della tariffa, incassato dall'hub e da pagare solo dopo la conferma del medico: sostiene l'assistenza degli hub aderenti, che gestiscono prenotazioni, eventuali spostamenti di orario o giorno e altre necessità.`;
                 $('anteprima-prestazioni').innerHTML = ordinate.map((p) => `
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 py-3">
                         <div class="min-w-0">
