@@ -254,7 +254,7 @@ function prenotazioniFiltrate() {
         if (st.filtro === 'attive' && !ATTIVE.includes(p.stato)) return false;
         if (st.filtro === 'chiuse' && !CHIUSE.includes(p.stato)) return false;
         if (!q) return true;
-        return [p.codice, p.paziente_nome, p.paziente_cognome, p.paziente_codice_fiscale, p.medico?.cognome]
+        return [p.codice, p.codice_richiesta, p.paziente_nome, p.paziente_cognome, p.paziente_codice_fiscale, p.medico?.cognome]
             .some((x) => String(x || '').toLowerCase().includes(q));
     }).sort((a, b) => {
         // le attive in ordine di visita, le altre dalla più recente

@@ -298,8 +298,11 @@ function layoutEmail(titolo: string, corpo: string): string {
 </td></tr></table></body></html>`;
 }
 
-function boxCodice(codice: string): string {
-  return `<div style="margin:16px 0;padding:14px 18px;border-radius:12px;background:#eff5fc;border:1px solid #b9d1f0;font-size:13px;color:#334155">Codice prenotazione<br><span style="font-size:22px;font-weight:bold;letter-spacing:1px;color:#31579c;font-family:'Courier New',monospace">${esc(codice)}</span></div>`;
+// codice definitivo (es. BA-M-2026-7F3K9Q); se sostituisce quello provvisorio della richiesta lo si indica
+function boxCodice(codice: string, provvisorio?: string | null): string {
+  const nota = provvisorio && provvisorio !== codice
+    ? `<br><span style="font-size:12px;color:#64748b">Sostituisce il codice provvisorio ${esc(provvisorio)}</span>` : "";
+  return `<div style="margin:16px 0;padding:14px 18px;border-radius:12px;background:#eff5fc;border:1px solid #b9d1f0;font-size:13px;color:#334155">Codice prenotazione<br><span style="font-size:22px;font-weight:bold;letter-spacing:1px;color:#31579c;font-family:'Courier New',monospace">${esc(codice)}</span>${nota}</div>`;
 }
 
 async function caricaPrenotazione(id: string) {
@@ -462,7 +465,7 @@ async function avvisaMedicoRichiesta(p: Pren) {
     layoutEmail("Un paziente vuole prenotare una visita", `
       <p>Gentile ${esc(nomeMedico(p))},<br>${chi} di prenotare la prestazione <strong>${esc(p.prestazione.nome)}</strong>
       per <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
-      ${boxCodice(p.codice)}
+      ${boxCodice(p.codice, p.codice_richiesta)}
       <p>Accedi alla tua area riservata per vedere i dati del paziente e <strong>confermare o rifiutare</strong> la richiesta
       entro 48 ore dal ricevimento${p.scadenza ? `, cioè entro <strong>${esc(dataOra(p.scadenza))}</strong>` : ""}.
       Se non rispondi entro questo termine la richiesta scade e l'orario torna libero.</p>
@@ -475,7 +478,7 @@ async function avvisaHubRichiesta(p: Pren) {
   await inviaEmail(p.hub.email, `Nuova richiesta online ${p.codice}: ${nomeMedico(p)}`, layoutEmail("Nuova richiesta per un medico della tua zona", `
     <p>È arrivata una richiesta online per <strong>${esc(nomeMedico(p))}</strong> (${esc(p.medico.citta)}):
     <strong>${esc(p.prestazione.nome)}</strong> il <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
-    ${boxCodice(p.codice)}
+    ${boxCodice(p.codice, p.codice_richiesta)}
     <p>Come hub di riferimento incassi il ticket di ${euro(p.quota_cents)} quando il paziente paga. Dall'area riservata puoi vedere i dati
     del paziente e, sentito il medico, confermare la richiesta, spostare la data o annullarla.</p>
     ${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`));
@@ -486,7 +489,7 @@ async function avvisaSpostamento(p: Pren, vecchia: string, opzioni: { medico: bo
   await inviaEmail(p.paziente_email, `Visita spostata ${p.codice}: ${dataOra(p.visita_il)}`, layoutEmail("La data della tua visita è cambiata", `
     <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>${esc(nomeMedico(p))} ha spostato la tua ${p.stato === "richiesta" ? "richiesta" : "visita"}
     al <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
-    ${boxCodice(p.codice)}
+    ${boxCodice(p.codice, p.codice_richiesta)}
     ${tabellaVisita(p, righe)}
     <p>Se il nuovo orario non ti va bene puoi annullare dalla tua area personale${p.canale === "hub" ? ` o rivolgendoti a ${esc(p.hub?.nome ?? "la struttura")}` : ""}.</p>
     <p style="color:#64748b;font-size:13px">${esc(TESTO_POLITICA)}</p>
@@ -494,7 +497,7 @@ async function avvisaSpostamento(p: Pren, vecchia: string, opzioni: { medico: bo
   const avviso = layoutEmail("Visita spostata", `
     <p>La ${p.stato === "richiesta" ? "richiesta" : "visita"} per <strong>${esc(p.prestazione.nome)}</strong> con ${esc(nomeMedico(p))}
     è stata spostata dal ${esc(dataOra(vecchia))} al <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
-    ${boxCodice(p.codice)}${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`);
+    ${boxCodice(p.codice, p.codice_richiesta)}${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`);
   if (opzioni.medico) await inviaEmail(p.medico.email, `Visita spostata ${p.codice}`, avviso);
   if (opzioni.hub && p.hub?.email) await inviaEmail(p.hub.email, `Visita spostata ${p.codice}`, avviso);
 }
@@ -502,7 +505,7 @@ async function avvisaSpostamento(p: Pren, vecchia: string, opzioni: { medico: bo
 async function avvisaPazienteRichiesta(p: Pren) {
   await inviaEmail(p.paziente_email, `Richiesta inviata ${p.codice}`, layoutEmail("Richiesta di prenotazione inviata", `
     <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>abbiamo inoltrato la tua richiesta al medico.</p>
-    ${boxCodice(p.codice)}
+    ${boxCodice(p.codice, p.codice_richiesta)}
     ${tabellaVisita(p, p.hub ? cella("Hub", `${esc(p.hub.nome)}${p.hub.citta ? `, ${esc(p.hub.citta)}` : ""}`) : "")}
     <p>Non devi pagare nulla adesso. Riceverai un'email appena il medico conferma: da quel momento avrai 24 ore per pagare
     la quota di prenotazione di ${euro(p.quota_cents)} dalla tua area personale.</p>
@@ -513,7 +516,7 @@ async function avvisaPazienteDaPagare(p: Pren) {
   await inviaEmail(p.paziente_email, `Il medico ha confermato: completa la prenotazione ${p.codice}`,
     layoutEmail("Il medico ha confermato la tua richiesta", `
       <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>${esc(nomeMedico(p))} ha confermato la disponibilità per la tua visita.</p>
-      ${boxCodice(p.codice)}
+      ${boxCodice(p.codice, p.codice_richiesta)}
       ${tabellaVisita(p)}
       <p>Per confermare definitivamente la prenotazione paga la quota di <strong>${euro(p.quota_cents)}</strong>
       entro <strong>${esc(dataOra(p.scadenza))}</strong>. Se non paghi entro questo termine l'orario torna disponibile per altri pazienti.</p>
@@ -533,7 +536,7 @@ async function avvisaRifiuto(p: Pren) {
   } else if (p.hub?.email) {
     await inviaEmail(p.hub.email, `Richiesta rifiutata ${p.codice}`, layoutEmail("Richiesta rifiutata dal medico", `
       <p>${esc(nomeMedico(p))} ha rifiutato la richiesta per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))}
-      (paziente ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)}).</p>${boxCodice(p.codice)}${motivo}
+      (paziente ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)}).</p>${boxCodice(p.codice, p.codice_richiesta)}${motivo}
       ${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`));
   }
 }
@@ -545,7 +548,7 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
     : cella("Quota di prenotazione", p.pagata_il ? `${euro(p.quota_cents)} pagata` : `${euro(p.quota_cents)}, da pagare presso ${esc(p.hub?.nome ?? "la struttura")} o con il bollettino online`);
   await inviaEmail(p.paziente_email, `Visita confermata ${p.codice}`, layoutEmail("La tua visita è confermata", `
     <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>la tua visita è confermata${p.canale === "hub" ? ` (prenotata presso ${esc(p.hub?.nome ?? "la struttura")})` : ""}.</p>
-    ${boxCodice(p.codice)}
+    ${boxCodice(p.codice, p.codice_richiesta)}
     ${tabellaVisita(p, quota)}
     <p>Conserva il codice: ti servirà per qualsiasi comunicazione. Se non puoi presentarti, avvisa il prima possibile.</p>
     <p style="color:#64748b;font-size:13px">${p.canale === "online" ? esc(TESTO_POLITICA) : `Il ticket viene rimborsato solo se annulli almeno 48 ore prima della visita, rivolgendoti a ${esc(p.hub?.nome ?? "la struttura")}; altrimenti non è rimborsabile.`}</p>`));
@@ -556,7 +559,7 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
         !p.pagata_il ? "" : ["pos", "contanti", "bonifico", "altro"].includes(p.metodo_pagamento)
           ? `: il ticket è stato pagato presso ${esc(p.hub?.nome ?? "l'hub")}`
           : ": il paziente ha pagato il ticket di prenotazione"}.</p>
-      ${boxCodice(p.codice)}
+      ${boxCodice(p.codice, p.codice_richiesta)}
       <p>I dati del paziente sono nella tua area riservata.</p>
       ${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`));
   }
@@ -564,7 +567,7 @@ async function avvisaVisitaConfermata(p: Pren, opzioni: { medico?: boolean; hub?
     await inviaEmail(p.hub.email, `Il medico ha confermato ${p.codice}`, layoutEmail("Visita confermata dal medico", `
       <p>${esc(nomeMedico(p))} ha confermato la visita di ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)}
       per <strong>${esc(p.prestazione.nome)}</strong> il <strong>${esc(dataOra(p.visita_il))}</strong>.</p>
-      ${boxCodice(p.codice)}
+      ${boxCodice(p.codice, p.codice_richiesta)}
       <p>Dall'area riservata puoi registrare l'incasso della quota o stampare il bollettino da pagare online.</p>
       ${pulsanteEmail(`${SITE}/area.html`, "Apri l'area riservata")}`));
   }
@@ -645,16 +648,16 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
       if (p.hub?.email) {
         await inviaEmail(p.hub.email, `Ticket incassato ${p.codice}`, layoutEmail("Ticket incassato", `
           <p>Il paziente ha pagato il ticket di <strong>${euro(p.quota_cents)}</strong> per la visita con ${esc(nomeMedico(p))}
-          del ${esc(dataOra(p.visita_il))}: l'importo è sul tuo conto Stripe.</p>${boxCodice(p.codice)}`));
+          del ${esc(dataOra(p.visita_il))}: l'importo è sul tuo conto Stripe.</p>${boxCodice(p.codice, p.codice_richiesta)}`));
       }
     } else {
       await inviaEmail(p.paziente_email, `Quota pagata ${p.codice}`, layoutEmail("Quota di prenotazione pagata", `
         <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>abbiamo ricevuto il pagamento della quota di ${euro(p.quota_cents)}.</p>
-        ${boxCodice(p.codice)}${tabellaVisita(p)}`));
+        ${boxCodice(p.codice, p.codice_richiesta)}${tabellaVisita(p)}`));
       if (p.hub?.email) {
         await inviaEmail(p.hub.email, `Bollettino pagato ${p.codice}`, layoutEmail("Bollettino pagato online", `
           <p>Il paziente ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)} ha pagato online la quota di ${euro(p.quota_cents)}.</p>
-          ${boxCodice(p.codice)}<p>L'importo è stato accreditato sul tuo conto Stripe.</p>`));
+          ${boxCodice(p.codice, p.codice_richiesta)}<p>L'importo è stato accreditato sul tuo conto Stripe.</p>`));
       }
     }
   } catch (e) { console.error("Avvisi dopo il pagamento non inviati", e); }
@@ -847,17 +850,17 @@ async function avvisaAnnullamento(p: Pren, esito: EsitoRimborso, motivo: string 
     await inviaEmail(p.paziente_email, `Prenotazione annullata ${p.codice}`, layoutEmail("La tua prenotazione è stata annullata", `
       <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>la prenotazione per <strong>${esc(p.prestazione.nome)}</strong>
       con ${esc(nomeMedico(p))} del ${esc(dataOra(p.visita_il))} è stata annullata${opzioni.daPaziente ? " su tua richiesta" : ""}.</p>
-      ${boxCodice(p.codice)}${motivo ? `<p>Motivo: ${esc(motivo)}</p>` : ""}<p>${testoRimborso(p, esito)}</p>`));
+      ${boxCodice(p.codice, p.codice_richiesta)}${motivo ? `<p>Motivo: ${esc(motivo)}</p>` : ""}<p>${testoRimborso(p, esito)}</p>`));
   }
   if (opzioni.medico) {
     await inviaEmail(p.medico.email, `Prenotazione annullata ${p.codice}`, layoutEmail("Prenotazione annullata", `
       <p>Gentile ${esc(nomeMedico(p))},<br>la ${p.stato === "richiesta" ? "richiesta" : "prenotazione"} per <strong>${esc(p.prestazione.nome)}</strong> del ${esc(dataOra(p.visita_il))}
-      è stata annullata${opzioni.daPaziente ? " dal paziente" : p.canale === "hub" ? ` da ${esc(p.hub?.nome ?? "l'hub")}` : ""}. L'orario è di nuovo disponibile.</p>${boxCodice(p.codice)}`));
+      è stata annullata${opzioni.daPaziente ? " dal paziente" : p.canale === "hub" ? ` da ${esc(p.hub?.nome ?? "l'hub")}` : ""}. L'orario è di nuovo disponibile.</p>${boxCodice(p.codice, p.codice_richiesta)}`));
   }
   if (opzioni.hub && p.hub?.email) {
     await inviaEmail(p.hub.email, `Prenotazione annullata ${p.codice}`, layoutEmail("Prenotazione annullata", `
       <p>La ${p.stato === "richiesta" ? "richiesta" : "prenotazione"} per <strong>${esc(p.prestazione.nome)}</strong> con ${esc(nomeMedico(p))}
-      del ${esc(dataOra(p.visita_il))} è stata annullata${opzioni.daPaziente ? " dal paziente" : ""}.</p>${boxCodice(p.codice)}
+      del ${esc(dataOra(p.visita_il))} è stata annullata${opzioni.daPaziente ? " dal paziente" : ""}.</p>${boxCodice(p.codice, p.codice_richiesta)}
       <p>${esito === "stripe" ? `Il ticket di ${euro(p.quota_cents)} è stato rimborsato automaticamente dal tuo conto Stripe.` : esito === "trattenuta" ? "Annullata a meno di 48 ore dalla visita: il ticket non è rimborsabile." : esito === "hub" ? "Se avevi incassato il ticket allo sportello, restituiscilo al paziente e segnalo come rimborsato." : "Il ticket non era stato pagato."}</p>`));
   }
 }
@@ -1527,7 +1530,7 @@ async function promemoria(req: Request) {
         : "";
       await inviaEmail(p.paziente_email, `Promemoria: domani la tua visita ${p.codice}`, layoutEmail("Domani hai una visita", `
         <p>Gentile ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)},<br>ti ricordiamo l'appuntamento di domani.</p>
-        ${boxCodice(p.codice)}
+        ${boxCodice(p.codice, p.codice_richiesta)}
         ${tabellaVisita(p)}
         ${daPagare}
         <p>Ti consigliamo di arrivare qualche minuto prima e di portare con te un documento, la tessera sanitaria ed eventuali esami precedenti.</p>
