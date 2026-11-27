@@ -39,7 +39,7 @@
         </div>
     </header>
     <main class="flex-grow w-full max-w-3xl mx-auto px-4 sm:px-6 py-8">
-        <a href="/" class="no-print inline-flex items-center gap-2 text-sm font-semibold text-skybrand-600 hover:text-skybrand-700 mb-5"><i class="fa-solid fa-arrow-left"></i> Torna alla ricerca</a>
+        <a id="torna-ricerca" href="/" class="no-print inline-flex items-center gap-2 text-sm font-semibold text-skybrand-600 hover:text-skybrand-700 mb-5"><i class="fa-solid fa-arrow-left"></i> Torna alla ricerca</a>
 
         <div id="caricamento" class="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-500 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Caricamento...</div>
         <div id="non-trovato" hidden class="bg-white border border-slate-200 rounded-2xl p-10 text-center">
@@ -164,6 +164,11 @@
 
         const params = new URLSearchParams(location.search);
         const medicoId = params.get('medico') || '';
+        // "Torna alla ricerca" riporta ai risultati da cui si è arrivati
+        try {
+            const da = new URL(document.referrer);
+            if (da.origin === location.origin && da.pathname.endsWith('/cerca.html')) document.getElementById('torna-ricerca').href = da.pathname + da.search;
+        } catch (_) { /* arrivo diretto */ }
         const $ = (id) => document.getElementById(id);
         let hubs = [], hubScelto = null, hubFisso = false, luogoPaziente = null;
         let medico, prestazioni = [], percento = 10, paziente = null, prestazioneId = null, slotScelto = null, richiesta = null;

@@ -8670,15 +8670,14 @@ Zungri|VV|`;
             form.addEventListener('submit', (event) => {
                 event.preventDefault();
 
+                // i risultati si aprono in una pagina a sé, con la ricerca nell'indirizzo:
+                // ricaricando, tornando indietro o condividendo il link la ricerca resta
                 const specialty = document.getElementById('specialty-input')?.value.trim() || '';
-                const location = document.getElementById('location-input')?.value.trim() || '';
-                const summaryText = [specialty, location].filter(Boolean).join(' • ') || 'Tutti i medici';
-                const activeSearchText = document.getElementById('active-search-text');
-                const summary = document.getElementById('search-query-summary');
-                if (activeSearchText) activeSearchText.textContent = summaryText;
-                if (summary) summary.textContent = `Ricerca: ${summaryText}`;
-                showResultsView();
-                if (window.cercaMedici) window.cercaMedici(specialty, location);
+                const dove = document.getElementById('location-input')?.value.trim() || '';
+                const p = new URLSearchParams();
+                if (specialty) p.set('q', specialty);
+                if (dove) p.set('dove', dove);
+                window.location.href = `cerca.html${p.toString() ? `?${p}` : ''}`;
             });
         }
 
