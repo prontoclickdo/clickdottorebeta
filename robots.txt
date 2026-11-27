@@ -1,6 +1,7 @@
 User-agent: *
-# le pagine riservate (area, accedi, pagamento...) hanno già il meta "noindex":
-# restano raggiungibili dai motori di ricerca proprio perché possano leggerlo
+# Su Google va indicizzata solo la pagina principale (https://www.clickdottore.it/):
+# tutte le altre pagine hanno il meta "noindex" e NON vanno bloccate qui,
+# altrimenti i motori di ricerca non potrebbero leggerlo.
 Disallow: /supabase/
 Disallow: /vendor-src/
 Disallow: /node_modules/
