@@ -38,12 +38,13 @@
         .hero-bg .max-w-4xl > *:nth-child(3) { animation-delay: .16s; }
         .hero-bg .max-w-4xl > *:nth-child(4) { animation-delay: .24s; }
         @keyframes hero-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-        .hero-type { display: flex; justify-content: center; align-items: baseline; gap: .4em; flex-wrap: wrap; margin: 0 0 1.25rem; font-weight: 700; font-size: 1.3rem; line-height: 1.35; color: #334155; }
+        .hero-type { display: flex; justify-content: center; align-items: baseline; align-content: center; gap: 0 .4em; flex-wrap: wrap; margin: 0 0 1.25rem; font-weight: 700; font-size: 1.3rem; line-height: 1.35; color: #334155; }
         @media (min-width: 640px) { .hero-type { font-size: 1.75rem; } }
         /* la riga "Trova ..." resta sempre centrata: si adatta alla lunghezza della parola che compare */
-        .hero-type-box { display: inline-block; }
+        /* le professioni lunghe possono andare a capo; l'altezza della riga è fissata via script su quella più lunga */
+        .hero-type-box { display: inline-block; max-width: 100%; text-align: center; }
         .hero-type-sizer { display: none; }
-        .hero-type-live { white-space: nowrap; }
+        .hero-type-live { white-space: normal; }
         #hero-type-word { display: inline-block; background: linear-gradient(90deg, #2a71c8, #2a8a7c, #2a71c8); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: hero-shimmer 4s linear infinite; }
         @keyframes hero-shimmer { to { background-position: -200% 0; } }
         html.dark .hero-type { color: #cbd5e1; }
@@ -92,7 +93,7 @@
                     <h1 class="text-3xl sm:text-4xl md:text-5xl font-extrabold text-slate-900 leading-tight mb-4">
                         Prenota la tua visita medica online
                     </h1>
-                    <p class="hero-type" aria-label="Trova un dermatologo, uno psicologo, un dentista e tanti altri professionisti">
+                    <p class="hero-type" aria-label="Trova un dermatologo, una cardiologa, uno psicologo e tanti altri specialisti">
                         <span>Trova</span>
                         <span class="hero-type-box" aria-hidden="true">
                             <span class="hero-type-sizer">un fisioterapista</span>
@@ -8716,13 +8717,102 @@ Zungri|VV|`;
             var word = document.getElementById('hero-type-word');
             if (!word) return;
             var box = word.parentNode;                              // contenitore: la dissolvenza è su di lui, non sul testo sfumato
-            var phrases = ['un dermatologo', 'uno psicologo', 'un dentista', 'un cardiologo', 'una ginecologa', 'un pediatra', 'un fisioterapista', 'un oculista', 'un nutrizionista'];
+            // professioni, ciascuna al maschile e al femminile: compaiono tutte, in ordine casuale
+            var coppie = [
+                ['un allergologo', "un'allergologa"],
+                ['un anatomopatologo', "un'anatomopatologa"],
+                ['un anestesista rianimatore', "un'anestesista rianimatrice"],
+                ['un audiologo', "un'audiologa"],
+                ['un cardiochirurgo', 'una cardiochirurga'],
+                ['un chiropratico', 'una chiropratica'],
+                ['un chirurgo generale', 'una chirurga generale'],
+                ['un chirurgo maxillo-facciale', 'una chirurga maxillo-facciale'],
+                ['un chirurgo pediatrico', 'una chirurga pediatrica'],
+                ['un chirurgo plastico', 'una chirurga plastica'],
+                ['un chirurgo toracico', 'una chirurga toracica'],
+                ['un chirurgo vascolare', 'una chirurga vascolare'],
+                ['un dermatologo', 'una dermatologa'],
+                ['un ematologo', "un'ematologa"],
+                ['un endocrinologo', "un'endocrinologa"],
+                ['un farmacologo clinico', 'una farmacologa clinica'],
+                ['un fisioterapista', 'una fisioterapista'],
+                ['un foniatra', 'una foniatra'],
+                ['un genetista medico', 'una genetista medica'],
+                ['un geriatra', 'una geriatra'],
+                ['un ginecologo', 'una ginecologa'],
+                ['uno gnatologo', 'una gnatologa'],
+                ['un medico igienista', 'una medica igienista'],
+                ['un logopedista', 'una logopedista'],
+                ['un cardiologo', 'una cardiologa'],
+                ['un gastroenterologo', 'una gastroenterologa'],
+                ['uno pneumologo', 'una pneumologa'],
+                ['un infettivologo', "un'infettivologa"],
+                ["un medico d'urgenza", "una medica d'urgenza"],
+                ['un medico del lavoro', 'una medica del lavoro'],
+                ['un medico dello sport', 'una medica dello sport'],
+                ['un medico di comunità e delle cure primarie', 'una medica di comunità e delle cure primarie'],
+                ['un medico palliativista', 'una medica palliativista'],
+                ['un fisiatra', 'una fisiatra'],
+                ['un internista', "un'internista"],
+                ['un medico legale', 'una medica legale'],
+                ['un medico nucleare', 'una medica nucleare'],
+                ['un medico termalista', 'una medica termalista'],
+                ['un microbiologo', 'una microbiologa'],
+                ['un nefrologo', 'una nefrologa'],
+                ['un neurochirurgo', 'una neurochirurga'],
+                ['un neurologo', 'una neurologa'],
+                ['un neuropsichiatra infantile', 'una neuropsichiatra infantile'],
+                ['un odontoiatra', "un'odontoiatra"],
+                ['un oculista', "un'oculista"],
+                ['un oncologo', "un'oncologa"],
+                ['un ortodontista', "un'ortodontista"],
+                ['un ortopedico', "un'ortopedica"],
+                ['un osteopata', "un'osteopata"],
+                ['un otorinolaringoiatra', "un'otorinolaringoiatra"],
+                ['un patologo clinico', 'una patologa clinica'],
+                ['un pediatra', 'una pediatra'],
+                ['un podologo', 'una podologa'],
+                ['uno psichiatra', 'una psichiatra'],
+                ['uno psicologo', 'una psicologa'],
+                ['uno psicoterapeuta', 'una psicoterapeuta'],
+                ['un radiologo', 'una radiologa'],
+                ['un radioterapista oncologo', 'una radioterapista oncologa'],
+                ['un reumatologo', 'una reumatologa'],
+                ['un nutrizionista', 'una nutrizionista'],
+                ['un senologo', 'una senologa'],
+                ['uno statistico sanitario', 'una statistica sanitaria'],
+                ['un urologo', "un'urologa"],
+                ['un dentista', 'una dentista']
+            ];
+            var tutte = [];
+            coppie.forEach(function (c) { tutte.push(c[0], c[1]); });
+            function mescola(l) {
+                for (var k = l.length - 1; k > 0; k--) { var j = Math.floor(Math.random() * (k + 1)); var t = l[k]; l[k] = l[j]; l[j] = t; }
+                return l;
+            }
+            var primo = word.textContent;                           // la prima (nell'HTML) resta "un dermatologo"
+            var phrases = [primo].concat(mescola(tutte.filter(function (p) { return p !== primo; })));
+            // altezza della riga fissata su quella della professione più lunga: la pagina non salta quando la parola cambia
+            var riga = box.closest('.hero-type');
+            function fissaAltezza() {
+                if (!riga || !riga.offsetParent) return;
+                var attuale = word.textContent, max = 0;
+                riga.style.minHeight = '';
+                tutte.forEach(function (p) { word.textContent = p; max = Math.max(max, riga.offsetHeight); });
+                word.textContent = attuale;
+                riga.style.minHeight = max + 'px';
+            }
+            fissaAltezza();
+            var attesaResize = null;
+            window.addEventListener('resize', function () { clearTimeout(attesaResize); attesaResize = setTimeout(fissaAltezza, 150); });
+            if (document.fonts && document.fonts.ready) document.fonts.ready.then(fissaAltezza);
             var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             var OUT = 2200, IN = 1500;                              // durata dissolvenza in uscita / in entrata (ms)
             var i = 0, busy = false;
             function next() {
                 if (busy || document.hidden || !box.offsetParent) return;
-                i = (i + 1) % phrases.length;
+                i = i + 1;
+                if (i >= phrases.length) { phrases = mescola(phrases.slice()); i = 0; }   // giro completo: nuovo ordine casuale
                 if (reduce || !box.animate) { word.textContent = phrases[i]; return; }
                 busy = true;
                 var out = box.animate([{ opacity: 1 }, { opacity: 0 }], { duration: OUT, easing: 'ease-in-out', fill: 'forwards' });
