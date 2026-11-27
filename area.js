@@ -925,7 +925,7 @@ function coppieMedicoHub() {
 const soloMedici = () => { const ids = new Set(coppieMedicoHub().map((c) => c.medico?.id).filter(Boolean)); return st.medici.filter((m) => !ids.has(m.id)); };
 const soloHub = () => { const ids = new Set(coppieMedicoHub().map((c) => c.hub?.id).filter(Boolean)); return st.hub.filter((h) => !ids.has(h.id)); };
 
-function cardMedico(m) {
+function cardMedico(m, conHub = false) {
                     const pr = st.prestazioni.filter((p) => p.medico_id === m.id);
                     return `<div class="${card} space-y-3">
                         <div class="flex items-start justify-between gap-3">
@@ -933,7 +933,7 @@ function cardMedico(m) {
                             <div class="text-xs text-slate-500">${esc(m.specializzazione)} · ${esc(m.citta)} · ${esc(m.email)}</div></div>
                             ${interruttore('medici', m.id, m.attivo)}
                         </div>
-                        ${rigaAbbonamento('medico', m.id)}
+                        ${conHub ? '<div class="text-xs text-slate-500 border-t border-slate-100 pt-3"><i class="fa-solid fa-id-card mr-1 text-slate-400"></i>Abbonamento: vale quello dell\'hub, qui accanto</div>' : rigaAbbonamento('medico', m.id)}
                         <div class="space-y-1.5">${pr.map((p) => `<div class="flex items-center justify-between gap-2 text-sm"><span class="text-slate-700">${esc(p.nome)}</span>${interruttore('prestazioni', p.id, p.attivo)}</div>`).join('') || '<p class="text-xs text-slate-500">Nessuna prestazione: il medico non compare nelle ricerche.</p>'}</div>
                         <form data-admin="crea_prestazione" class="flex gap-2"><input type="hidden" name="medico_id" value="${m.id}"><input name="nome" required placeholder="Nuova prestazione" class="${classeCampo}"><button type="submit" class="${btnSecondario} shrink-0">Aggiungi</button></form>
                     </div>`;
@@ -983,7 +983,7 @@ function disegnaMediciHub() {
                         <div class="text-xs text-slate-500">${c.utenza ? `Utenza: ${esc(c.utenza.email)}` : '<span class="text-amber-700">Nessuna utenza "medico che fa anche da hub" collegata</span>'}</div>
                     </div>
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                        <div class="space-y-1.5"><div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Medico</div>${c.medico ? cardMedico(c.medico) : `<div class="${card} text-sm text-slate-500">Nessun medico collegato.</div>`}</div>
+                        <div class="space-y-1.5"><div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Medico</div>${c.medico ? cardMedico(c.medico, !!c.utenza) : `<div class="${card} text-sm text-slate-500">Nessun medico collegato.</div>`}</div>
                         <div class="space-y-1.5"><div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Hub</div>${c.hub ? cardHub(c.hub) : `<div class="${card} text-sm text-slate-500">Nessun hub collegato.</div>`}</div>
                     </div>
                 </div>`).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun medico che fa anche da hub.</div>`}
