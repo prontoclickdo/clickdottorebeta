@@ -154,7 +154,7 @@ function schede() {
     if (r === 'admin' || io.medico_id) elenco.push(['orari', 'Orari', 'fa-clock'], ['tariffe', 'Prestazioni e tariffe', 'fa-tags']);
     if (r === 'admin') elenco.push(['conti', 'Conti hub (storico)', 'fa-scale-balanced']);
     else if (io.hub_id) elenco.push(['incassi', 'Incassi', 'fa-wallet']);
-    if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['utenze', 'Utenze', 'fa-users'], ['candidature', 'Candidature', 'fa-envelope-open-text'], ['impostazioni', 'Impostazioni', 'fa-gear']);
+    if (r === 'admin') elenco.push(['medici', 'Medici', 'fa-user-doctor'], ['hub', 'Hub', 'fa-hospital'], ['medicihub', 'Medici che fanno anche da hub', 'fa-house-medical'], ['utenze', 'Utenze', 'fa-users'], ['candidature', 'Candidature', 'fa-envelope-open-text'], ['impostazioni', 'Impostazioni', 'fa-gear']);
     if (r === 'operatore') elenco.unshift(elenco.splice(1, 1)[0]);
     if (r !== 'admin') elenco.push(['abbonamento', 'Abbonamento', 'fa-id-card']);
     $('schede').innerHTML = elenco.map(([id, testo, icona]) => `
@@ -175,8 +175,9 @@ async function vai(scheda) {
         if (scheda === 'tariffe') { await caricaMedici(); disegnaTariffe(); }
         if (scheda === 'conti') { await caricaConti(); disegnaConti(); }
         if (scheda === 'incassi') { await Promise.all([caricaStatoStripe(), caricaPrenotazioni()]); disegnaIncassi(); }
-        if (scheda === 'medici') { await Promise.all([caricaMedici(), caricaAbbonamenti()]); disegnaMedici(); }
-        if (scheda === 'hub') { await Promise.all([caricaHub(), caricaAbbonamenti()]); disegnaHub(); }
+        if (scheda === 'medici') { await Promise.all([caricaMedici(), caricaAbbonamenti(), caricaProfili()]); disegnaMedici(); }
+        if (scheda === 'hub') { await Promise.all([caricaHub(), caricaAbbonamenti(), caricaProfili()]); disegnaHub(); }
+        if (scheda === 'medicihub') { await Promise.all([caricaMedici(), caricaHub(), caricaAbbonamenti(), caricaProfili()]); disegnaMediciHub(); }
         if (scheda === 'abbonamento') { st.abbonamento = await api('stato-abbonamento', { conAccesso: true, dati: {} }); disegnaAbbonamento(); }
         if (scheda === 'utenze') { await Promise.all([caricaProfili(), caricaHub(), caricaMedici()]); disegnaUtenze(); }
         if (scheda === 'impostazioni') { await caricaImpostazioni(); disegnaImpostazioni(); }
@@ -910,31 +911,21 @@ const campo = (nome, etichetta, tipo = 'text', extra = '') => `
 const interruttore = (tabella, id, attivo) => `
     <button type="button" data-attivo="${tabella}:${id}:${attivo ? '0' : '1'}" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border ${attivo ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-slate-200 text-slate-500 bg-slate-50'}">${attivo ? 'Attivo' : 'Disattivato'}</button>`;
 
-function disegnaMedici() {
-    $('vista').innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
-            <form data-admin="crea_medico" class="${card} space-y-3 lg:col-span-2 self-start">
-                <h2 class="font-bold text-slate-900">Nuovo medico</h2>
-                <div class="grid grid-cols-2 gap-3">${campo('nome', 'Nome', 'text', 'required')}${campo('cognome', 'Cognome', 'text', 'required')}</div>
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Genere</span>
-                    <select name="genere" required data-genere class="${classeCampo}"><option value="">Scegli...</option><option value="M" ${'' === 'M' ? 'selected' : ''}>Maschile (Dott., Specializzato)</option><option value="F" ${'' === 'F' ? 'selected' : ''}>Femminile (Dott.ssa, Specializzata)</option><option value="A" ${'' === 'A' ? 'selected' : ''}>Altro (da specificare)</option></select></label>
-                <div data-genere-altro ${'' === 'A' ? '' : 'hidden'} class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Titolo con cui essere identificato/a</span>
-                        <input name="titolo" maxlength="15" value="" placeholder="Es. Dott., Dott.ssa, Dr." class="${classeCampo}"></label>
-                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Dicitura della specializzazione</span>
-                        <input name="dicitura_specializzazione" maxlength="30" value="" placeholder="Es. Specialista in" class="${classeCampo}"></label>
-                </div>
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Specializzazione</span>
-                    <select name="specializzazione" required class="${classeCampo}"><option value="">Scegli dall'elenco</option>${(window.SPECIALIZZAZIONI || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select></label>
-                <div class="grid grid-cols-2 gap-3">${campo('citta', 'Città', 'text', 'required')}${campo('telefono', 'Telefono', 'tel')}</div>
-                ${campo('indirizzo', 'Indirizzo dello studio', 'text', 'placeholder="Comunicato al paziente con la data della visita"')}
-                ${campo('email', 'Email per le notifiche', 'email', 'required')}
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Prestazioni (una per riga)</span>
-                    <textarea name="prestazioni" rows="3" class="${classeCampo}" placeholder="Prima visita cardiologica&#10;Elettrocardiogramma"></textarea></label>
-                <button type="submit" class="${btnPrimario} w-full">Aggiungi il medico</button>
-            </form>
-            <div class="lg:col-span-3 space-y-3">
-                ${st.medici.length ? st.medici.map((m) => {
+// ---------------------------------------------------------------------
+// Medici, hub e medici che fanno anche da hub (scheda separata)
+// ---------------------------------------------------------------------
+// coppie medico + hub: utenze "medico_hub"; in più gli hub di tipo "medico" senza ancora un'utenza
+function coppieMedicoHub() {
+    const coppie = st.profili.filter((p) => p.ruolo === 'medico_hub' && p.medico_id && p.hub_id)
+        .map((p) => ({ medico: st.medici.find((m) => m.id === p.medico_id), hub: st.hub.find((h) => h.id === p.hub_id), utenza: p }));
+    const conCoppia = new Set(coppie.map((c) => c.hub?.id));
+    st.hub.filter((h) => h.tipo === 'medico' && !conCoppia.has(h.id)).forEach((h) => coppie.push({ medico: null, hub: h, utenza: null }));
+    return coppie;
+}
+const soloMedici = () => { const ids = new Set(coppieMedicoHub().map((c) => c.medico?.id).filter(Boolean)); return st.medici.filter((m) => !ids.has(m.id)); };
+const soloHub = () => { const ids = new Set(coppieMedicoHub().map((c) => c.hub?.id).filter(Boolean)); return st.hub.filter((h) => !ids.has(h.id)); };
+
+function cardMedico(m) {
                     const pr = st.prestazioni.filter((p) => p.medico_id === m.id);
                     return `<div class="${card} space-y-3">
                         <div class="flex items-start justify-between gap-3">
@@ -946,29 +937,10 @@ function disegnaMedici() {
                         <div class="space-y-1.5">${pr.map((p) => `<div class="flex items-center justify-between gap-2 text-sm"><span class="text-slate-700">${esc(p.nome)}</span>${interruttore('prestazioni', p.id, p.attivo)}</div>`).join('') || '<p class="text-xs text-slate-500">Nessuna prestazione: il medico non compare nelle ricerche.</p>'}</div>
                         <form data-admin="crea_prestazione" class="flex gap-2"><input type="hidden" name="medico_id" value="${m.id}"><input name="nome" required placeholder="Nuova prestazione" class="${classeCampo}"><button type="submit" class="${btnSecondario} shrink-0">Aggiungi</button></form>
                     </div>`;
-                }).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun medico ancora.</div>`}
-            </div>
-        </div>`;
 }
 
-function disegnaHub() {
-    $('vista').innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
-            <form data-admin="crea_hub" class="${card} space-y-3 lg:col-span-2 self-start">
-                <h2 class="font-bold text-slate-900">Nuovo hub</h2>
-                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Tipo</span>
-                    <select name="tipo" class="${classeCampo}"><option value="struttura">Struttura privata</option><option value="medico">Medico che fa da hub</option></select></label>
-                ${campo('nome', 'Nome', 'text', 'required')}
-                ${campo('codice', 'Codice hub (entra nei codici CDH)', 'text', 'required maxlength="10" placeholder="Es. MT014" style="text-transform:uppercase"')}
-                <div class="grid grid-cols-2 gap-3">${campo('citta', 'Città')}${campo('telefono', 'Telefono', 'tel')}</div>
-                ${campo('indirizzo', 'Indirizzo')}
-                ${campo('email', 'Email', 'email')}
-                ${campo('coordinate', 'Coordinate sulla mappa (facoltative)', 'text', 'placeholder="Es. 40.6664, 16.6043"')}
-                <p class="text-xs text-slate-500">La posizione sulla mappa pubblica degli hub si ricava da indirizzo e città; scrivi le coordinate solo per correggerla.</p>
-                <button type="submit" class="${btnPrimario} w-full">Aggiungi l'hub</button>
-            </form>
-            <div class="lg:col-span-3 space-y-3">
-                ${st.hub.length ? st.hub.map((h) => `
+function cardHub(h) {
+    return `
                     <div class="${card} space-y-3">
                         <div class="flex items-start justify-between gap-3">
                             <div><div class="font-semibold text-slate-900">${esc(h.nome)} <span class="font-mono text-xs text-slate-500">${esc(h.codice)}</span></div>
@@ -993,7 +965,78 @@ function disegnaHub() {
                                 <button type="submit" class="${btnSecondario} w-full">Salva</button>
                             </form>
                         </details>
-                    </div>`).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun hub ancora.</div>`}
+                    </div>`;
+}
+
+function disegnaMediciHub() {
+    const coppie = coppieMedicoHub();
+    $('vista').innerHTML = `
+        <div class="space-y-5">
+            <div class="${card} text-sm text-slate-600 space-y-1">
+                <h2 class="font-bold text-slate-900">Medici che fanno anche da hub</h2>
+                <p>Per aggiungerne uno: crea il medico nella scheda Medici e l'hub (tipo "Medico che fa da hub") nella scheda Hub, poi nella scheda Utenze crea un'utenza "Medico che fa anche da hub" collegata a entrambi. Da quel momento compare qui.</p>
+            </div>
+            ${coppie.length ? coppie.map((c) => `
+                <div class="rounded-2xl border border-skybrand-200 bg-skybrand-50/40 p-4 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="font-bold text-slate-900"><i class="fa-solid fa-house-medical text-skybrand-500 mr-1.5"></i>${c.medico ? `${c.medico.genere === 'F' ? 'Dott.ssa' : c.medico.genere === 'A' && c.medico.titolo ? c.medico.titolo : 'Dott.'} ${esc(c.medico.nome)} ${esc(c.medico.cognome)}` : esc(c.hub?.nome || '')}</div>
+                        <div class="text-xs text-slate-500">${c.utenza ? `Utenza: ${esc(c.utenza.email)}` : '<span class="text-amber-700">Nessuna utenza "medico che fa anche da hub" collegata</span>'}</div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <div class="space-y-1.5"><div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Medico</div>${c.medico ? cardMedico(c.medico) : `<div class="${card} text-sm text-slate-500">Nessun medico collegato.</div>`}</div>
+                        <div class="space-y-1.5"><div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Hub</div>${c.hub ? cardHub(c.hub) : `<div class="${card} text-sm text-slate-500">Nessun hub collegato.</div>`}</div>
+                    </div>
+                </div>`).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun medico che fa anche da hub.</div>`}
+        </div>`;
+}
+
+function disegnaMedici() {
+    $('vista').innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <form data-admin="crea_medico" class="${card} space-y-3 lg:col-span-2 self-start">
+                <h2 class="font-bold text-slate-900">Nuovo medico</h2>
+                <div class="grid grid-cols-2 gap-3">${campo('nome', 'Nome', 'text', 'required')}${campo('cognome', 'Cognome', 'text', 'required')}</div>
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Genere</span>
+                    <select name="genere" required data-genere class="${classeCampo}"><option value="">Scegli...</option><option value="M" ${'' === 'M' ? 'selected' : ''}>Maschile (Dott., Specializzato)</option><option value="F" ${'' === 'F' ? 'selected' : ''}>Femminile (Dott.ssa, Specializzata)</option><option value="A" ${'' === 'A' ? 'selected' : ''}>Altro (da specificare)</option></select></label>
+                <div data-genere-altro ${'' === 'A' ? '' : 'hidden'} class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Titolo con cui essere identificato/a</span>
+                        <input name="titolo" maxlength="15" value="" placeholder="Es. Dott., Dott.ssa, Dr." class="${classeCampo}"></label>
+                    <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Dicitura della specializzazione</span>
+                        <input name="dicitura_specializzazione" maxlength="30" value="" placeholder="Es. Specialista in" class="${classeCampo}"></label>
+                </div>
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Specializzazione</span>
+                    <select name="specializzazione" required class="${classeCampo}"><option value="">Scegli dall'elenco</option>${(window.SPECIALIZZAZIONI || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select></label>
+                <div class="grid grid-cols-2 gap-3">${campo('citta', 'Città', 'text', 'required')}${campo('telefono', 'Telefono', 'tel')}</div>
+                ${campo('indirizzo', 'Indirizzo dello studio', 'text', 'placeholder="Comunicato al paziente con la data della visita"')}
+                ${campo('email', 'Email per le notifiche', 'email', 'required')}
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Prestazioni (una per riga)</span>
+                    <textarea name="prestazioni" rows="3" class="${classeCampo}" placeholder="Prima visita cardiologica&#10;Elettrocardiogramma"></textarea></label>
+                <button type="submit" class="${btnPrimario} w-full">Aggiungi il medico</button>
+            </form>
+            <div class="lg:col-span-3 space-y-3">
+                ${soloMedici().length ? soloMedici().map(cardMedico).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun medico (i medici che fanno anche da hub sono nella loro scheda).</div>`}
+            </div>
+        </div>`;
+}
+
+function disegnaHub() {
+    $('vista').innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <form data-admin="crea_hub" class="${card} space-y-3 lg:col-span-2 self-start">
+                <h2 class="font-bold text-slate-900">Nuovo hub</h2>
+                <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Tipo</span>
+                    <select name="tipo" class="${classeCampo}"><option value="struttura">Struttura privata</option><option value="medico">Medico che fa da hub</option></select></label>
+                ${campo('nome', 'Nome', 'text', 'required')}
+                ${campo('codice', 'Codice hub (entra nei codici CDH)', 'text', 'required maxlength="10" placeholder="Es. MT014" style="text-transform:uppercase"')}
+                <div class="grid grid-cols-2 gap-3">${campo('citta', 'Città')}${campo('telefono', 'Telefono', 'tel')}</div>
+                ${campo('indirizzo', 'Indirizzo')}
+                ${campo('email', 'Email', 'email')}
+                ${campo('coordinate', 'Coordinate sulla mappa (facoltative)', 'text', 'placeholder="Es. 40.6664, 16.6043"')}
+                <p class="text-xs text-slate-500">La posizione sulla mappa pubblica degli hub si ricava da indirizzo e città; scrivi le coordinate solo per correggerla.</p>
+                <button type="submit" class="${btnPrimario} w-full">Aggiungi l'hub</button>
+            </form>
+            <div class="lg:col-span-3 space-y-3">
+                ${soloHub().length ? soloHub().map(cardHub).join('') : `<div class="${card} text-sm text-slate-500 text-center py-10">Nessun hub (i medici che fanno anche da hub sono nella loro scheda).</div>`}
             </div>
         </div>`;
 }
