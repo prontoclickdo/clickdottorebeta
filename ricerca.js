@@ -101,7 +101,7 @@ async function cercaMedici(specialita, luogo) {
                     <div class="w-12 h-12 rounded-xl bg-skybrand-50 text-skybrand-500 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-user-doctor"></i></div>
                     <div class="min-w-0">
                         <h3 class="font-bold text-slate-900">Dott. ${esc(m.nome)} ${esc(m.cognome)}</h3>
-                        <p class="text-sm text-slate-500">${esc(m.specializzazione)}</p>
+                        <p class="text-sm text-slate-500">Specializzato/a in ${esc(m.specializzazione)}</p>
                         <p class="text-xs text-slate-500 mt-0.5"><i class="fa-solid fa-location-dot text-skybrand-500 mr-1"></i>${esc(m.citta)}</p>
                     </div>
                 </div>
