@@ -2,6 +2,7 @@
 -- Aggiorna i medici e le candidature salvati con i nomi precedenti delle specializzazioni,
 -- usando la stessa tabella di corrispondenza di specializzazioni.js (window.SPECIALIZZAZIONI_PRECEDENTI).
 -- Le prestazioni dei medici non cambiano: i nomi sono rimasti gli stessi.
+-- Medicina Estetica e Medicina Subacquea e Iperbarica sono state eliminate: nessun medico le usava.
 -- Si può eseguire più volte: le righe già aggiornate non vengono toccate.
 -- Da eseguire nell'editor SQL di Supabase.
 
@@ -17,7 +18,6 @@ insert into nuove_specializzazioni (precedente, attuale) values
     ('Audiologia e Foniatria', 'Audiologia e foniatria'),
     ('Biologia Nutrizionale', 'Scienza dell’alimentazione'),
     ('Cardiologia', 'Malattie dell’apparato cardiovascolare'),
-    ('Chiropratica', 'Medicina fisica e riabilitativa'),
     ('Chirurgia Bariatrica', 'Chirurgia Generale'),
     ('Chirurgia Pediatrica', 'Chirurgia pediatrica'),
     ('Chirurgia Plastica, Estetica e Ricostruttiva', 'Chirurgia plastica, ricostruttiva ed estetica'),
@@ -27,38 +27,26 @@ insert into nuove_specializzazioni (precedente, attuale) values
     ('Endocrinologia', 'Endocrinologia e malattie del metabolismo'),
     ('Epatologia', 'Malattie dell’apparato digerente'),
     ('Fisiatria (Medicina Fisica e Riabilitativa)', 'Medicina fisica e riabilitativa'),
-    ('Fisioterapia', 'Medicina fisica e riabilitativa'),
     ('Gastroenterologia', 'Malattie dell’apparato digerente'),
     ('Genetica Medica', 'Genetica medica'),
     ('Ginecologia e Ostetricia', 'Ginecologia ed Ostetricia'),
-    ('Gnatologia', 'Chirurgia Maxillo-Facciale'),
-    ('Logopedia', 'Audiologia e foniatria'),
     ('Malattie Infettive (Infettivologia)', 'Malattie Infettive e Tropicali'),
     ('Medicina Aeronautica e Spaziale', 'Medicina del Lavoro'),
     ('Medicina dello Sport', 'Medicina dello sport e dell’esercizio fisico'),
-    ('Medicina Estetica', 'Chirurgia plastica, ricostruttiva ed estetica'),
     ('Medicina Generale (Medico di Famiglia)', 'Medicina di comunità e delle cure primarie'),
     ('Medicina Interna', 'Medicina interna'),
     ('Medicina Nucleare', 'Medicina nucleare'),
-    ('Medicina Subacquea e Iperbarica', 'Anestesia Rianimazione, Terapia Intensiva e del dolore'),
     ('Medicina Termale', 'Medicina termale'),
     ('Neuropsichiatria Infantile', 'Neuropsichiatria infantile'),
     ('Neuropsicologia', 'Neurologia'),
     ('Nutrizione Clinica', 'Scienza dell’alimentazione'),
     ('Oculistica (Oftalmologia)', 'Oftalmologia'),
-    ('Odontoiatria', 'Chirurgia Maxillo-Facciale'),
     ('Oncologia', 'Oncologia medica'),
-    ('Ortodonzia', 'Chirurgia Maxillo-Facciale'),
     ('Ortopedia e Traumatologia', 'Ortopedia e traumatologia'),
     ('Ortottica', 'Oftalmologia'),
-    ('Osteopatia', 'Medicina fisica e riabilitativa'),
     ('Pneumologia', 'Malattie dell’apparato respiratorio'),
-    ('Podologia', 'Ortopedia e traumatologia'),
     ('Proctologia', 'Chirurgia Generale'),
-    ('Psicologia', 'Psichiatria'),
-    ('Psicoterapia', 'Psichiatria'),
-    ('Radiologia (Radiodiagnostica)', 'Radiodiagnostica'),
-    ('Senologia', 'Chirurgia Generale');
+    ('Radiologia (Radiodiagnostica)', 'Radiodiagnostica');
 
 update public.medici m set specializzazione = n.attuale
   from nuove_specializzazioni n where lower(trim(m.specializzazione)) = lower(n.precedente);
