@@ -323,11 +323,6 @@ async function impostazione(chiave: string, predefinito = ""): Promise<string> {
   return data?.valore ?? predefinito;
 }
 
-async function percentualeHub(): Promise<number> {
-  const n = parseInt(await impostazione("quota_hub_percento", "80"), 10);
-  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 80;
-}
-
 // Hub di riferimento di un medico: quello della stessa città, altrimenti il più vicino.
 // Sono aderenti gli hub attivi, con abbonamento valido e conto Stripe pronto a ricevere i ticket.
 const normCitta = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
@@ -659,7 +654,7 @@ async function confermaPagamento(prenotazioneId: string, sessionId: string, paym
       if (p.hub?.email) {
         await inviaEmail(p.hub.email, `Bollettino pagato ${p.codice}`, layoutEmail("Bollettino pagato online", `
           <p>Il paziente ${esc(p.paziente_nome)} ${esc(p.paziente_cognome)} ha pagato online la quota di ${euro(p.quota_cents)}.</p>
-          ${boxCodice(p.codice)}<p>${p.stripe_account_id ? "L'importo è stato accreditato sul tuo conto Stripe." : `La tua parte (${euro(p.quota_hub_cents)}) compare nel saldo della scheda Conti.`}</p>`));
+          ${boxCodice(p.codice)}<p>L'importo è stato accreditato sul tuo conto Stripe.</p>`));
       }
     }
   } catch (e) { console.error("Avvisi dopo il pagamento non inviati", e); }
@@ -1383,16 +1378,6 @@ async function admin(req: Request) {
         if (!Number.isFinite(cents) || cents < 50 || cents > 10000) throw new HttpError(400, "Quota non valida (da 0,50 € a 100 €)");
         await db.from("impostazioni").upsert({ chiave: "quota_cents", valore: String(cents) });
       }
-      if (body.quota_hub_percento !== undefined) {
-        const pct = Math.round(Number(body.quota_hub_percento));
-        if (!Number.isFinite(pct) || pct < 0 || pct > 100) throw new HttpError(400, "Percentuale dell'hub non valida (da 0 a 100)");
-        await db.from("impostazioni").upsert({ chiave: "quota_hub_percento", valore: String(pct) });
-      }
-      if (body.iban !== undefined) {
-        const iban = String(body.iban ?? "").toUpperCase().replace(/\s/g, "");
-        if (iban && !/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) throw new HttpError(400, "IBAN non valido");
-        await db.from("impostazioni").upsert({ chiave: "iban_click_dottore", valore: iban });
-      }
       if (body.email_candidature !== undefined) {
         const e = String(body.email_candidature ?? "").trim().toLowerCase();
         if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) throw new HttpError(400, "Email per le candidature non valida");
@@ -1405,26 +1390,7 @@ async function admin(req: Request) {
         if (!Number.isFinite(cents) || cents < 100 || cents > 100000) throw new HttpError(400, `Prezzo del piano ${NOMI_PIANI[piano]} non valido (da 1 € a 1.000 €)`);
         await db.from("impostazioni").upsert({ chiave: `abbonamento_${piano}_cents`, valore: String(cents) });
       }
-      if (body.intestatario !== undefined) {
-        await db.from("impostazioni").upsert({ chiave: "intestatario_iban", valore: testo(body.intestatario, "intestatario", 120, false) });
-      }
       await registra(io.id, "imposta_impostazioni", null, body);
-      return json(req, { ok: true });
-    }
-    case "registra_regolazione": {
-      const hub_id = uuid(body.hub_id, "hub");
-      const cents = Math.round(Number(String(body.importo_euro ?? "").replace(",", ".")) * 100);
-      if (!Number.isFinite(cents) || cents <= 0 || cents > 100000000) throw new HttpError(400, "Importo non valido");
-      const verso = String(body.verso ?? "");
-      if (!["hub_a_cd", "cd_a_hub"].includes(verso)) throw new HttpError(400, "Indica chi ha fatto il bonifico");
-      const data = String(body.data ?? "") || new Date().toISOString().slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new HttpError(400, "Data non valida");
-      const { error } = await db.from("regolazioni").insert({
-        hub_id, importo_cents: verso === "hub_a_cd" ? cents : -cents, data,
-        nota: testo(body.nota, "nota", 200, false) || null, registrata_da: io.id,
-      });
-      if (error) { console.error(error); throw new HttpError(500, "Registrazione non riuscita"); }
-      await registra(io.id, "registra_regolazione", null, { hub_id, cents, verso });
       return json(req, { ok: true });
     }
     case "imposta_quota": {
