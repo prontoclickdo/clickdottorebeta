@@ -1,5 +1,5 @@
 // Click Dottore - ricerca dei medici prenotabili online (pagina principale)
-import { supabase, esc } from './app.js';
+import { supabase, esc, euro } from './app.js';
 
 function pulisci(valore) {
     // caratteri che hanno un significato speciale nei filtri diventano "qualsiasi testo"
@@ -49,7 +49,7 @@ async function cercaMedici(specialita, luogo) {
     }
     const ids = (medici || []).map((m) => m.id);
     const { data: prestazioni } = ids.length
-        ? await supabase.from('prestazioni_pubbliche').select('medico_id, nome').in('medico_id', ids).order('nome')
+        ? await supabase.from('prestazioni_pubbliche').select('medico_id, nome, prezzo_visita_cents').in('medico_id', ids).order('nome')
         : { data: [] };
     const conPrestazioni = (medici || []).filter((m) => (prestazioni || []).some((p) => p.medico_id === m.id));
 
@@ -67,7 +67,11 @@ async function cercaMedici(specialita, luogo) {
     }
 
     el.innerHTML = conPrestazioni.map((m) => {
-        const pr = (prestazioni || []).filter((p) => p.medico_id === m.id);
+        // prima le visite, poi le altre prestazioni in ordine di prezzo
+        const pr = (prestazioni || []).filter((p) => p.medico_id === m.id)
+            .sort((a, b) => (/visita/i.test(b.nome) - /visita/i.test(a.nome)) || ((a.prezzo_visita_cents ?? 1e9) - (b.prezzo_visita_cents ?? 1e9)));
+        const prezzi = pr.map((p) => p.prezzo_visita_cents).filter((c) => c != null);
+        const minimo = prezzi.length ? Math.min(...prezzi) : null;
         return `
             <article class="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col gap-4 hover:border-skybrand-300 transition">
                 <div class="flex items-start gap-3">
@@ -78,7 +82,10 @@ async function cercaMedici(specialita, luogo) {
                         <p class="text-xs text-slate-500 mt-0.5"><i class="fa-solid fa-location-dot text-skybrand-500 mr-1"></i>${esc(m.citta)}</p>
                     </div>
                 </div>
-                <ul class="text-xs text-slate-600 space-y-1">${pr.slice(0, 3).map((p) => `<li><i class="fa-solid fa-check text-skybrand-500 mr-1.5"></i>${esc(p.nome)}</li>`).join('')}${pr.length > 3 ? `<li class="text-slate-400">e altre ${pr.length - 3}</li>` : ''}</ul>
+                <ul class="text-xs text-slate-600 space-y-1.5">${pr.slice(0, 4).map((p) => `
+                    <li class="flex items-baseline justify-between gap-3"><span class="min-w-0"><i class="fa-solid fa-check text-skybrand-500 mr-1.5"></i>${esc(p.nome)}</span>${p.prezzo_visita_cents != null ? `<span class="shrink-0 font-semibold text-slate-900">${euro(p.prezzo_visita_cents)}</span>` : ''}</li>`).join('')}
+                    ${pr.length > 4 ? `<li class="text-slate-400">e altre ${pr.length - 4} prestazioni</li>` : ''}</ul>
+                ${minimo != null ? `<p class="text-xs text-slate-500">Prestazioni a partire da <strong class="text-slate-900">${euro(minimo)}</strong></p>` : ''}
                 <a href="prenota.html?medico=${encodeURIComponent(m.id)}" class="mt-auto text-center px-4 py-2.5 bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold rounded-xl transition">Prenota online</a>
             </article>`;
     }).join('');

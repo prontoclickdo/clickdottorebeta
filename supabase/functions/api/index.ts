@@ -1158,6 +1158,43 @@ async function gestioneMedico(req: Request) {
       await registra(io.id, "salva_prestazione", null, { medico_id: medicoId, nome: riga.nome });
       return json(req, { ok: true });
     }
+    case "salva_listino": {
+      // il medico sceglie dal listino della specializzazione le prestazioni che offre, con tariffa e durata
+      const voci = Array.isArray(body.voci) ? body.voci : [];
+      if (!voci.length || voci.length > 100) throw new HttpError(400, "Listino non valido");
+      const { data: esistenti } = await db.from("prestazioni").select("id, nome, attivo").eq("medico_id", medicoId);
+      const perNome = new Map<string, R>((esistenti ?? []).map((p: R) => [String(p.nome).trim().toLowerCase(), p]));
+      // prima controllo tutto, poi salvo: niente listini salvati a metà
+      const righe = voci.map((v: R) => {
+        const nome = testo(v?.nome, "nome della prestazione", 120);
+        const offerta = v?.offerta === true;
+        if (!offerta) return { nome, offerta };
+        const durata = Math.round(Number(v.durata_minuti));
+        if (!Number.isFinite(durata) || durata < 5 || durata > 480) throw new HttpError(400, `Durata non valida per «${nome}» (da 5 a 480 minuti)`);
+        const grezzo = String(v.prezzo_euro ?? "").replace(",", ".").trim();
+        if (!grezzo) throw new HttpError(400, `Indica la tariffa di «${nome}»`);
+        const prezzo = Math.round(Number(grezzo) * 100);
+        if (!Number.isFinite(prezzo) || prezzo < 0 || prezzo > 10000000) throw new HttpError(400, `Tariffa non valida per «${nome}»`);
+        return { nome, offerta, prezzo, durata };
+      });
+      let attivate = 0;
+      for (const r of righe) {
+        const es = perNome.get(r.nome.toLowerCase());
+        if (!r.offerta) {
+          // tolta dal listino: non è più prenotabile, ma resta per le prenotazioni già fatte
+          if (es?.attivo) await db.from("prestazioni").update({ attivo: false }).eq("id", es.id).eq("medico_id", medicoId);
+          continue;
+        }
+        attivate++;
+        const campi = { prezzo_visita_cents: r.prezzo, durata_minuti: r.durata, attivo: true };
+        const { error } = es
+          ? await db.from("prestazioni").update(campi).eq("id", es.id).eq("medico_id", medicoId)
+          : await db.from("prestazioni").insert({ ...campi, nome: r.nome, medico_id: medicoId });
+        if (error) throw new HttpError(500, `Salvataggio non riuscito per «${r.nome}»`);
+      }
+      await registra(io.id, "salva_listino", null, { medico_id: medicoId, offerte: attivate });
+      return json(req, { ok: true, offerte: attivate });
+    }
     case "salva_profilo": {
       const { error } = await db.from("medici").update({
         indirizzo: testo(body.indirizzo, "indirizzo", 160, false) || null,

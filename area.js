@@ -17,7 +17,7 @@ const st = {
     medici: [], prestazioni: [], hub: [], profili: [],
     nuova: { medicoId: null, cercaMedico: '', hubId: null, prestazioneId: null, slot: null, esito: null },
     pannelloId: null,
-    medicoGestito: null,      // medico di cui si modificano orari e tariffe (il proprio, o scelto dall'admin)
+    medicoGestito: null, listinoSpec: null,      // medico di cui si modificano orari e tariffe (il proprio, o scelto dall'admin)
     orari: [], chiusure: [],
     impostazioni: {}, conti: [], regolazioni: [], candidature: [],
     daConfermare: 0,
@@ -688,10 +688,78 @@ async function salvaOrari(bottone) {
 // ---------------------------------------------------------------------
 // Prestazioni e tariffe del medico
 // ---------------------------------------------------------------------
+// Listino della specializzazione: il medico spunta le prestazioni che offre e ne fissa tariffa e durata
+const chiaveNome = (v) => String(v || '').trim().toLowerCase();
+function specializzazioneListino(medico) {
+    const cat = window.CATALOGO_PRESTAZIONI || {};
+    if (st.listinoSpec && cat[st.listinoSpec]) return st.listinoSpec;
+    if (cat[medico.specializzazione]) return medico.specializzazione;
+    const n = chiaveNome(medico.specializzazione);
+    return Object.keys(cat).find((k) => n && (chiaveNome(k).includes(n) || n.includes(chiaveNome(k)))) || Object.keys(cat)[0];
+}
+
+function listino(medico, prest) {
+    const cat = window.CATALOGO_PRESTAZIONI || {};
+    const spec = specializzazioneListino(medico);
+    const voci = cat[spec] || [];
+    const perNome = new Map(prest.map((p) => [chiaveNome(p.nome), p]));
+    const righe = voci.map(([nome, durataBase]) => {
+        const p = perNome.get(chiaveNome(nome));
+        const offerta = !!p?.attivo;
+        return `
+            <div data-voce="${esc(nome)}" class="grid grid-cols-12 gap-2 items-center py-2.5">
+                <label class="col-span-12 sm:col-span-6 flex items-start gap-2.5 text-sm text-slate-800 cursor-pointer">
+                    <input type="checkbox" data-offerta ${offerta ? 'checked' : ''} class="mt-0.5 w-4 h-4 shrink-0"><span>${esc(nome)}</span></label>
+                <label class="col-span-6 sm:col-span-3 flex items-center gap-1.5"><input data-prezzo type="number" min="0" step="0.01" value="${p?.prezzo_visita_cents != null ? (p.prezzo_visita_cents / 100).toFixed(2) : ''}" placeholder="Tariffa" class="${classeCampo} !py-2"><span class="text-xs text-slate-500">€</span></label>
+                <label class="col-span-6 sm:col-span-3 flex items-center gap-1.5"><input data-durata type="number" min="5" max="480" step="5" value="${p?.durata_minuti || durataBase}" class="${classeCampo} !py-2"><span class="text-xs text-slate-500">min</span></label>
+            </div>`;
+    }).join('');
+    const offerte = voci.filter(([nome]) => perNome.get(chiaveNome(nome))?.attivo).length;
+    return `
+        <form data-listino class="${card} space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div>
+                    <h2 class="font-bold text-slate-900">Listino delle prestazioni</h2>
+                    <p class="text-xs text-slate-500 mt-0.5">${offerte} di ${voci.length} offerte</p>
+                </div>
+                <label class="block sm:w-72"><span class="block text-xs font-semibold text-slate-600 mb-1">Specializzazione</span>
+                    <select data-listino-spec class="${classeCampo}">${Object.keys(cat).map((k) => `<option ${k === spec ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select></label>
+            </div>
+            <p class="text-sm text-slate-500">Spunta le prestazioni che offri e indica tariffa e durata: compaiono ai pazienti nella ricerca della pagina principale e durante la prenotazione. Togliendo la spunta la prestazione non è più prenotabile (le prenotazioni già fatte restano valide).</p>
+            <div class="hidden sm:grid grid-cols-12 gap-2 text-xs font-semibold text-slate-500 border-b border-slate-100 pb-1">
+                <span class="col-span-6">Prestazione</span><span class="col-span-3">Tariffa</span><span class="col-span-3">Durata</span></div>
+            <div class="divide-y divide-slate-100">${righe}</div>
+            <button type="submit" class="${btnPrimario} w-full sm:w-auto">Salva il listino</button>
+        </form>`;
+}
+
+async function inviaListino(form) {
+    const voci = [...form.querySelectorAll('[data-voce]')].map((r) => ({
+        nome: r.dataset.voce,
+        offerta: r.querySelector('[data-offerta]').checked,
+        prezzo_euro: r.querySelector('[data-prezzo]').value,
+        durata_minuti: r.querySelector('[data-durata]').value,
+    }));
+    const senzaPrezzo = voci.find((v) => v.offerta && String(v.prezzo_euro).trim() === '');
+    if (senzaPrezzo) return avviso(`Indica la tariffa di «${senzaPrezzo.nome}»`);
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+        const r = await api('medico', { conAccesso: true, dati: { azione: 'salva_listino', medico_id: st.medicoGestito, voci } });
+        await vai('tariffe');
+        avviso(`Listino salvato: ${r.offerte} ${r.offerte === 1 ? 'prestazione offerta' : 'prestazioni offerte'}`, 'ok');
+    } catch (err) {
+        avviso(err.message);
+        btn.disabled = false;
+    }
+}
+
 function disegnaTariffe() {
     const medico = st.medici.find((m) => m.id === st.medicoGestito);
     if (!medico) { $('vista').innerHTML = `${sceltaMedico()}<div class="${card} text-sm text-slate-500">Nessun medico da gestire.</div>`; return; }
-    const prest = st.prestazioni.filter((p) => p.medico_id === medico.id);
+    const tutte = st.prestazioni.filter((p) => p.medico_id === medico.id);
+    const nelListino = new Set(((window.CATALOGO_PRESTAZIONI || {})[specializzazioneListino(medico)] || []).map(([n]) => chiaveNome(n)));
+    const prest = tutte.filter((p) => !nelListino.has(chiaveNome(p.nome)));
     const modulo = (p) => `
         <form data-medico="salva_prestazione" class="${card} space-y-3">
             ${p ? `<input type="hidden" name="id" value="${p.id}">` : '<h2 class="font-bold text-slate-900">Nuova prestazione</h2>'}
@@ -712,11 +780,12 @@ function disegnaTariffe() {
         ${sceltaMedico()}
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
             <div class="lg:col-span-3 space-y-4">
-                <p class="text-sm text-slate-500">La tariffa è il costo della visita che il paziente paga a te ed è mostrata durante la prenotazione. La quota di prenotazione online è separata.</p>
-                ${prest.length ? prest.map(modulo).join('') : `<div class="${card} text-sm text-slate-500">Nessuna prestazione: aggiungine una per comparire nelle ricerche.</div>`}
+                ${listino(medico, tutte)}
+                <p class="text-sm text-slate-500">La tariffa è il costo della visita che il paziente paga a te. Il ticket di prenotazione (${percentoTesto(st.percento)} della tariffa) è separato e va all'hub.</p>
+                ${prest.length ? `<h2 class="font-bold text-slate-900 pt-2">Altre prestazioni</h2>${prest.map(modulo).join('')}` : ''}
             </div>
             <div class="lg:col-span-2 space-y-5">
-                ${modulo(null)}
+                ${modulo(null).replace('Nuova prestazione', 'Prestazione non presente nel listino')}
                 <form data-medico="salva_profilo" class="${card} space-y-3">
                     <h2 class="font-bold text-slate-900">Studio</h2>
                     <label class="block"><span class="block text-xs font-semibold text-slate-600 mb-1">Indirizzo dello studio</span>
@@ -1372,6 +1441,7 @@ document.addEventListener('submit', (e) => {
     const form = e.target;
     if (form.id === 'form-nuova') { e.preventDefault(); return inviaNuova(form); }
     if (form.dataset.medico) { e.preventDefault(); return inviaMedico(form); }
+    if (form.hasAttribute('data-listino')) { e.preventDefault(); return inviaListino(form); }
     if (form.dataset.admin) { e.preventDefault(); return inviaAdmin(form); }
 });
 
@@ -1383,6 +1453,12 @@ document.addEventListener('input', (e) => {
     }
 });
 document.addEventListener('change', (e) => {
+    if (e.target.hasAttribute('data-listino-spec')) { st.listinoSpec = e.target.value; return disegnaTariffe(); }
+    // spuntando una prestazione del listino il cursore va sulla tariffa
+    if (e.target.hasAttribute('data-offerta') && e.target.checked) {
+        const prezzo = e.target.closest('[data-voce]')?.querySelector('[data-prezzo]');
+        if (prezzo && !prezzo.value) prezzo.focus();
+    }
     if (e.target.name === 'hub_id' && e.target.closest('#form-nuova')) st.nuova.hubId = e.target.value;
     if (e.target.name === 'prestazione_id' && e.target.closest('#form-nuova')) {
         st.nuova.prestazioneId = e.target.value;
@@ -1390,7 +1466,7 @@ document.addEventListener('change', (e) => {
         if ($('ticket-nuova')) $('ticket-nuova').textContent = testoTicketNuova();
         caricaSlotNuova();
     }
-    if (e.target.id === 'medico-gestito') { st.medicoGestito = e.target.value; vai(st.scheda); }
+    if (e.target.id === 'medico-gestito') { st.medicoGestito = e.target.value; st.listinoSpec = null; vai(st.scheda); }
     if (e.target.dataset.statoCandidatura) {
         api('admin', { conAccesso: true, dati: { azione: 'stato_candidatura', id: e.target.dataset.statoCandidatura, stato: e.target.value } })
             .then(() => avviso('Stato aggiornato', 'ok')).catch((err) => avviso(err.message));
