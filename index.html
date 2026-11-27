@@ -52,7 +52,7 @@
             .hero-bg .max-w-4xl > *, #hero-type-word { animation: none !important; }
             }
     </style>
-    <link rel="stylesheet" href="vendor/tailwind/tailwind.css?v=1">
+    <link rel="stylesheet" href="vendor/tailwind/tailwind.css?v=2">
 </head>
 <body class="min-h-screen flex flex-col">
 
@@ -145,7 +145,7 @@
                         <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 flex items-center gap-2">
                             <i class="fa-solid fa-user-doctor text-skybrand-500 text-lg"></i> Specializzazioni e Professioni Sanitarie
                         </h3>
-                        <div id="specialties-quick-container" class="flex flex-wrap gap-2"></div>
+                        <div id="specialties-quick-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2"></div>
                     </div>
 
                 </div>
@@ -8440,8 +8440,8 @@ Zungri|VV|`;
             SPECIALTIES.forEach((specialty) => {
                 const button = document.createElement('button');
                 button.type = 'button';
-                // stessa larghezza di base e crescita uguale: le righe si allineano e formano un rettangolo uniforme
-                button.className = 'flex-[1_1_7rem] sm:flex-[1_1_9.5rem] flex items-center justify-center px-3 py-2 rounded-xl bg-slate-50 hover:bg-skybrand-50 hover:border-skybrand-300 border border-slate-200 transition-colors duration-200 group text-center';
+                // griglia a colonne fisse: tutti i riquadri hanno la stessa larghezza, anche nell'ultima riga
+                button.className = 'min-h-[2.75rem] flex items-center justify-center px-3 py-2 rounded-xl bg-slate-50 hover:bg-skybrand-50 hover:border-skybrand-300 border border-slate-200 transition-colors duration-200 group text-center';
                 button.addEventListener('click', () => fillSpecialty(specialty.name));
 
                 const label = document.createElement('span');
