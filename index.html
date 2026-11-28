@@ -939,22 +939,26 @@
         }
     </script>
     <script>
-        // Menu dell'intestazione: si nasconde scorrendo verso il basso e ricompare appena si risale (o in cima alla pagina).
-        // Mentre l'intestazione cambia altezza il browser corregge da solo lo scorrimento: quei movimenti
-        // non vanno scambiati per una risalita, quindi per la durata della transizione vengono ignorati.
+        // Menu dell'intestazione: si nasconde scorrendo verso il basso e ricompare appena si risale (e sempre in cima).
+        // Mentre l'intestazione cambia altezza il browser corregge da solo lo scorrimento: quei movimenti non vanno
+        // scambiati per una risalita, quindi durante la transizione si ignorano (ma la cima della pagina vale sempre)
+        // e alla fine della transizione la posizione viene ricontrollata, anche se nel frattempo non si è più scorso.
         (function () {
             var SOGLIA = 8, INIZIO = 200, TRANSIZIONE = 450;   // INIZIO oltre l'altezza che l'intestazione perde su telefono (~125 px)
-            var nascosto = false, attesa = false, ultimaY = window.scrollY || 0, bloccatoFino = 0;
+            var nascosto = false, attesa = false, ultimaY = 0, bloccatoFino = 0, ricontrollo = null;
+            function posizione() { return Math.max(0, window.scrollY || document.documentElement.scrollTop || 0); }
             function imposta(valore) {
                 nascosto = valore;
                 document.body.classList.toggle('menu-nascosto', valore);
                 bloccatoFino = Date.now() + TRANSIZIONE;
+                clearTimeout(ricontrollo);
+                ricontrollo = setTimeout(function () { bloccatoFino = 0; ultimaY = posizione(); aggiorna(); }, TRANSIZIONE + 30);
             }
             function aggiorna() {
                 attesa = false;
-                var y = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+                var y = posizione();
+                if (y <= 10) { if (nascosto) imposta(false); ultimaY = y; return; }   // in cima: sempre visibile
                 if (Date.now() < bloccatoFino) { ultimaY = y; return; }
-                if (y <= 10) { if (nascosto) imposta(false); ultimaY = y; return; }
                 var delta = y - ultimaY;
                 if (Math.abs(delta) < SOGLIA) return;          // movimenti minimi: nessun cambio
                 if (delta > 0 && !nascosto && y > INIZIO) imposta(true);
@@ -962,7 +966,8 @@
                 ultimaY = y;
             }
             window.addEventListener('scroll', function () { if (!attesa) { attesa = true; requestAnimationFrame(aggiorna); } }, { passive: true });
-            if ((window.scrollY || 0) > INIZIO) imposta(true);
+            ultimaY = posizione();
+            if (ultimaY > INIZIO) imposta(true);
         })();
     </script>
 </body>
