@@ -57,6 +57,13 @@
         .hero-type-box { display: inline-block; max-width: 100%; text-align: center; }
         .hero-type-sizer { display: none; }
         .hero-type-live { white-space: normal; }
+        /* Menu dell'intestazione: scompare scorrendo verso il basso e ricompare tornando in cima (classe sul body via script) */
+        .menu-scorrimento { transition: opacity .3s ease, transform .3s ease, visibility 0s linear 0s; }
+        .menu-mobile { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .35s ease, opacity .3s ease, border-color .3s ease, visibility 0s linear 0s; }
+        .menu-mobile-interno { overflow: hidden; min-height: 0; }
+        body.menu-nascosto .menu-desktop { opacity: 0; transform: translateY(-8px); visibility: hidden; pointer-events: none; transition: opacity .3s ease, transform .3s ease, visibility 0s linear .3s; }
+        body.menu-nascosto .menu-mobile { grid-template-rows: 0fr; opacity: 0; border-top-color: transparent; visibility: hidden; transition: grid-template-rows .35s ease, opacity .25s ease, border-color .3s ease, visibility 0s linear .35s; }
+        @media (prefers-reduced-motion: reduce) { .menu-scorrimento, body.menu-nascosto .menu-scorrimento { transition: none; } }
         #hero-type-word { display: inline-block; background: linear-gradient(90deg, #2a71c8, #2a8a7c, #2a71c8); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: hero-shimmer 4s linear infinite; }
         @keyframes hero-shimmer { to { background-position: -200% 0; } }
         html.dark .hero-type { color: #cbd5e1; }
@@ -75,7 +82,7 @@
                 <picture><source srcset="logo-header-dark.png?v=3" media="(prefers-color-scheme: dark)"><img src="logo.png?v=3" alt="clickdottore.it - Sportello medico sanitario" class="h-12 sm:h-14 lg:h-16 2xl:h-20 w-auto max-w-full object-contain"></picture>
             </a>
 
-            <nav class="hidden xl:flex items-center gap-4 2xl:gap-6 shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">
+            <nav class="menu-scorrimento menu-desktop hidden xl:flex items-center gap-4 2xl:gap-6 shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">
                 <a href="privacy.html" class="hover:text-skybrand-600 transition">Come trattiamo i tuoi dati?</a>
                 <a href="lavora-con-noi.html" class="hover:text-skybrand-600 transition">Lavora con noi</a>
                 <a href="accedi.html" data-ospite class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 hover:border-skybrand-400 hover:text-skybrand-600 transition"><i class="fa-solid fa-right-to-bracket text-xs"></i> Accedi</a>
@@ -86,15 +93,15 @@
         </div>
 
         <!-- Su smartphone e tablet: logo centrato e pulsanti del menu sotto (su telefono in due righe) -->
-        <nav class="xl:hidden border-t border-slate-100">
-            <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-center gap-2 whitespace-nowrap">
+        <nav class="menu-scorrimento menu-mobile xl:hidden border-t border-slate-100">
+            <div class="menu-mobile-interno"><div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-center gap-2 whitespace-nowrap">
                 <a href="privacy.html" class="inline-flex items-center justify-center gap-1.5 px-3.5 h-11 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:border-skybrand-400 hover:text-skybrand-600 transition">Come trattiamo i tuoi dati?</a>
                 <a href="lavora-con-noi.html" class="inline-flex items-center justify-center gap-1.5 px-3.5 h-11 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:border-skybrand-400 hover:text-skybrand-600 transition">Lavora con noi</a>
                 <span class="basis-full h-0 sm:hidden" aria-hidden="true"></span>
                 <a href="registrati.html" data-ospite class="inline-flex items-center justify-center gap-1.5 px-3.5 h-11 rounded-xl bg-skybrand-500 hover:bg-skybrand-600 text-white text-sm font-semibold transition"><i class="fa-solid fa-user-plus text-xs"></i> Registrati</a>
                 <a href="area-paziente.html" data-utente hidden class="inline-flex items-center justify-center gap-1.5 px-3.5 h-11 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:border-skybrand-400 transition"><i class="fa-solid fa-user text-xs"></i> La mia area</a>
                 <a href="accedi.html" data-ospite class="inline-flex items-center justify-center gap-1.5 px-3.5 h-11 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:border-skybrand-400 hover:text-skybrand-600 transition"><i class="fa-solid fa-right-to-bracket text-xs"></i> Accedi</a>
-            </div>
+            </div></div>
         </nav>
     </header>
 
@@ -930,6 +937,21 @@
             document.querySelectorAll('[data-ospite]').forEach((el) => { el.hidden = true; });
             document.querySelectorAll('[data-utente]').forEach((el) => { el.hidden = false; });
         }
+    </script>
+    <script>
+        // Menu dell'intestazione: nascosto dopo un po' di scorrimento verso il basso, di nuovo visibile in cima alla pagina.
+        // Soglie diverse per nascondere (120 px) e mostrare (10 px): niente sfarfallio quando l'intestazione cambia altezza.
+        (function () {
+            var nascosto = false, attesa = false;
+            function aggiorna() {
+                attesa = false;
+                var y = window.scrollY || document.documentElement.scrollTop || 0;
+                if (!nascosto && y > 120) { nascosto = true; document.body.classList.add('menu-nascosto'); }
+                else if (nascosto && y <= 10) { nascosto = false; document.body.classList.remove('menu-nascosto'); }
+            }
+            window.addEventListener('scroll', function () { if (!attesa) { attesa = true; requestAnimationFrame(aggiorna); } }, { passive: true });
+            aggiorna();
+        })();
     </script>
 </body>
 </html>
