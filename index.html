@@ -76,7 +76,7 @@
 </head>
 <body class="min-h-screen flex flex-col">
 
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+    <header id="intestazione" class="bg-white border-b border-slate-200 fixed top-0 inset-x-0 z-50">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 lg:h-24 2xl:h-28 flex items-center justify-center xl:justify-between gap-3">
             <a href="#" onclick="showHomeView(); return false;" class="flex items-center gap-3 group min-w-0">
                 <picture><source srcset="logo-header-dark.png?v=3" media="(prefers-color-scheme: dark)"><img src="logo.png?v=3" alt="clickdottore.it - Sportello medico sanitario" class="h-12 sm:h-14 lg:h-16 2xl:h-20 w-auto max-w-full object-contain"></picture>
@@ -104,6 +104,16 @@
             </div></div>
         </nav>
     </header>
+    <!-- L'intestazione è fissa: questo spazio ne occupa l'altezza piena, così quando il menu si chiude la pagina non si sposta -->
+    <div id="spazio-intestazione" aria-hidden="true"></div>
+    <script>
+        (function () {
+            var h = document.getElementById('intestazione'), spazio = document.getElementById('spazio-intestazione');
+            function misura() { if (!document.body.classList.contains('menu-nascosto')) spazio.style.height = h.offsetHeight + 'px'; }
+            misura();
+            if (window.ResizeObserver) new ResizeObserver(misura).observe(h); else window.addEventListener('resize', misura);
+        })();
+    </script>
 
     <main class="flex-grow flex flex-col justify-center">
         <div id="home-view" class="pb-16">
@@ -940,29 +950,21 @@
     </script>
     <script>
         // Menu dell'intestazione: si nasconde scorrendo verso il basso e ricompare appena si risale (e sempre in cima).
-        // Mentre l'intestazione cambia altezza il browser corregge da solo lo scorrimento: quei movimenti non vanno
-        // scambiati per una risalita, quindi durante la transizione si ignorano (ma la cima della pagina vale sempre)
-        // e alla fine della transizione la posizione viene ricontrollata, anche se nel frattempo non si è più scorso.
+        // L'intestazione è fissa e lo spazio sotto non cambia altezza: aprendo o chiudendo il menu la pagina non si sposta,
+        // quindi ogni movimento di scorrimento è dell'utente e viene letto subito, anche durante la transizione.
         (function () {
-            var SOGLIA = 8, INIZIO = 200, TRANSIZIONE = 450;   // INIZIO oltre l'altezza che l'intestazione perde su telefono (~125 px)
-            var nascosto = false, attesa = false, ultimaY = 0, bloccatoFino = 0, ricontrollo = null;
+            var SOGLIA = 8, INIZIO = 120;
+            var nascosto = false, attesa = false, ultimaY = 0;
             function posizione() { return Math.max(0, window.scrollY || document.documentElement.scrollTop || 0); }
-            function imposta(valore) {
-                nascosto = valore;
-                document.body.classList.toggle('menu-nascosto', valore);
-                bloccatoFino = Date.now() + TRANSIZIONE;
-                clearTimeout(ricontrollo);
-                ricontrollo = setTimeout(function () { bloccatoFino = 0; ultimaY = posizione(); aggiorna(); }, TRANSIZIONE + 30);
-            }
+            function imposta(valore) { if (valore !== nascosto) { nascosto = valore; document.body.classList.toggle('menu-nascosto', valore); } }
             function aggiorna() {
                 attesa = false;
                 var y = posizione();
-                if (y <= 10) { if (nascosto) imposta(false); ultimaY = y; return; }   // in cima: sempre visibile
-                if (Date.now() < bloccatoFino) { ultimaY = y; return; }
+                if (y <= 10) { imposta(false); ultimaY = y; return; }   // in cima: sempre visibile
                 var delta = y - ultimaY;
-                if (Math.abs(delta) < SOGLIA) return;          // movimenti minimi: nessun cambio
-                if (delta > 0 && !nascosto && y > INIZIO) imposta(true);
-                else if (delta < 0 && nascosto) imposta(false);
+                if (Math.abs(delta) < SOGLIA) return;                 // movimenti minimi: nessun cambio
+                if (delta > 0 && y > INIZIO) imposta(true);
+                else if (delta < 0) imposta(false);
                 ultimaY = y;
             }
             window.addEventListener('scroll', function () { if (!attesa) { attesa = true; requestAnimationFrame(aggiorna); } }, { passive: true });
