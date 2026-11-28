@@ -939,18 +939,30 @@
         }
     </script>
     <script>
-        // Menu dell'intestazione: nascosto dopo un po' di scorrimento verso il basso, di nuovo visibile in cima alla pagina.
-        // Soglie diverse per nascondere (120 px) e mostrare (10 px): niente sfarfallio quando l'intestazione cambia altezza.
+        // Menu dell'intestazione: si nasconde scorrendo verso il basso e ricompare appena si risale (o in cima alla pagina).
+        // Mentre l'intestazione cambia altezza il browser corregge da solo lo scorrimento: quei movimenti
+        // non vanno scambiati per una risalita, quindi per la durata della transizione vengono ignorati.
         (function () {
-            var nascosto = false, attesa = false;
+            var SOGLIA = 8, INIZIO = 120, TRANSIZIONE = 450;
+            var nascosto = false, attesa = false, ultimaY = window.scrollY || 0, bloccatoFino = 0;
+            function imposta(valore) {
+                nascosto = valore;
+                document.body.classList.toggle('menu-nascosto', valore);
+                bloccatoFino = Date.now() + TRANSIZIONE;
+            }
             function aggiorna() {
                 attesa = false;
-                var y = window.scrollY || document.documentElement.scrollTop || 0;
-                if (!nascosto && y > 120) { nascosto = true; document.body.classList.add('menu-nascosto'); }
-                else if (nascosto && y <= 10) { nascosto = false; document.body.classList.remove('menu-nascosto'); }
+                var y = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+                if (Date.now() < bloccatoFino) { ultimaY = y; return; }
+                if (y <= 10) { if (nascosto) imposta(false); ultimaY = y; return; }
+                var delta = y - ultimaY;
+                if (Math.abs(delta) < SOGLIA) return;          // movimenti minimi: nessun cambio
+                if (delta > 0 && !nascosto && y > INIZIO) imposta(true);
+                else if (delta < 0 && nascosto) imposta(false);
+                ultimaY = y;
             }
             window.addEventListener('scroll', function () { if (!attesa) { attesa = true; requestAnimationFrame(aggiorna); } }, { passive: true });
-            aggiorna();
+            if ((window.scrollY || 0) > INIZIO) imposta(true);
         })();
     </script>
 </body>
