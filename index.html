@@ -954,11 +954,10 @@
         // quindi ogni movimento di scorrimento è dell'utente e viene letto subito, anche durante la transizione.
         (function () {
             var SOGLIA = 8, INIZIO = 120;
-            var nascosto = false, attesa = false, ultimaY = 0;
+            var nascosto = false, ultimaY = 0;
             function posizione() { return Math.max(0, window.scrollY || document.documentElement.scrollTop || 0); }
             function imposta(valore) { if (valore !== nascosto) { nascosto = valore; document.body.classList.toggle('menu-nascosto', valore); } }
             function aggiorna() {
-                attesa = false;
                 var y = posizione();
                 if (y <= 10) { imposta(false); ultimaY = y; return; }   // in cima: sempre visibile
                 var delta = y - ultimaY;
@@ -967,7 +966,8 @@
                 else if (delta < 0) imposta(false);
                 ultimaY = y;
             }
-            window.addEventListener('scroll', function () { if (!attesa) { attesa = true; requestAnimationFrame(aggiorna); } }, { passive: true });
+            // lettura diretta a ogni evento di scorrimento (il browser li emette al massimo una volta per fotogramma)
+            window.addEventListener('scroll', aggiorna, { passive: true });
             ultimaY = posizione();
             if (ultimaY > INIZIO) imposta(true);
         })();
