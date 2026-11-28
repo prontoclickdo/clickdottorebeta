@@ -943,7 +943,7 @@
         // Mentre l'intestazione cambia altezza il browser corregge da solo lo scorrimento: quei movimenti
         // non vanno scambiati per una risalita, quindi per la durata della transizione vengono ignorati.
         (function () {
-            var SOGLIA = 8, INIZIO = 120, TRANSIZIONE = 450;
+            var SOGLIA = 8, INIZIO = 200, TRANSIZIONE = 450;   // INIZIO oltre l'altezza che l'intestazione perde su telefono (~125 px)
             var nascosto = false, attesa = false, ultimaY = window.scrollY || 0, bloccatoFino = 0;
             function imposta(valore) {
                 nascosto = valore;
